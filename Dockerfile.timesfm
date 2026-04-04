@@ -1,0 +1,30 @@
+# TimesFM 2.5 200M — PyTorch inference on Tesla P40
+FROM nvidia/cuda:12.8.0-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV HF_HOME=/models/huggingface
+ENV NVIDIA_VISIBLE_DEVICES=all
+ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+
+RUN apt-get update && apt-get install -y \
+    python3 python3-pip python3-dev git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Upgrade pip so it can parse modern pyproject.toml extras
+RUN pip3 install --no-cache-dir --upgrade pip
+
+# PyTorch 2.4.1 is the last version supporting Tesla P40 (compute 6.1 / Pascal)
+# PyTorch 2.5+ dropped sm_61 support entirely
+RUN pip install --no-cache-dir torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
+
+# Clone TimesFM and install (skip [torch] extra — torch already pinned above)
+RUN git clone --depth 1 https://github.com/google-research/timesfm.git .
+RUN pip install --no-cache-dir "." fastapi uvicorn
+
+COPY timesfm_server.py /app/server.py
+
+EXPOSE 9082
+
+CMD ["python3", "-m", "uvicorn", "server:app", "--host", "0.0.0.0", "--port", "9082"]

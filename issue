@@ -1,0 +1,20 @@
+**PROJECT: Qwen3.5-0.8B (vision) + Whisper on Tesla P40 + Xeon E5-2660 v2**
+
+**Hardware:**
+- GPU: Tesla P40 (24 GB, compute 6.1)
+- CPU: Xeon E5-2660 v2 (Ivy Bridge, 2013)
+- Host CUDA driver: 13.0 (nvidia-smi shows 580.126.09)
+
+**Folder structure:**
+~/containers/qwen-p40-turbo/
+├── Dockerfile
+├── docker-compose.yml
+└── models/
+    ├── Qwen3.5-0.8B-Q5_K_M.gguf
+    ├── mmproj-F32.gguf
+    └── ggml-base.en-q5_1.bin
+
+**Current Problem:**
+Even after multiple rebuilds with conservative flags (-march=core2 -mno-avx, -DGGML_AVX=OFF, etc.), we still get:
+"bash: line XX: Illegal instruction (core dumped)"  
+for both llama-server processes (Qwen and Whisper), even with -ngl 0 (pure CPU mode).
