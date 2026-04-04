@@ -132,6 +132,17 @@ models/
 └── huggingface/                   # TimesFM (auto-downloaded on first use)
 ```
 
+## Credits
+
+Built on top of these projects:
+
+- **[llama.cpp](https://github.com/ggerganov/llama.cpp)** — C++ inference engine for LLMs (chat server)
+- **[whisper.cpp](https://github.com/ggerganov/whisper.cpp)** — C++ inference engine for Whisper (audio transcription server)
+- **[TimesFM](https://github.com/google-research/timesfm)** — Google Research's foundation model for time-series forecasting
+- **[Qwen 3.5](https://huggingface.co/Qwen/Qwen3.5-0.8B)** — Alibaba's vision-language model (0.8B Q5 quantized via [gguf](https://huggingface.co/Qwen/Qwen3.5-0.8B-GGUF))
+- **[OpenAI Whisper](https://github.com/openai/whisper)** — Original Whisper model by OpenAI (base.en, quantized to ggml q5_1)
+- **[PyTorch](https://pytorch.org/)** — ML framework powering TimesFM inference (v2.4.1 for Pascal GPU support)
+
 ## Examples
 
 See the [`examples/`](examples/) directory for integration examples in Python and shell.
