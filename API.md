@@ -2,7 +2,7 @@
 
 Single-container GPU server running on Tesla P40. All models load on first request and unload after 5 minutes idle.
 
-**Base URL:** `http://<host>:8080`
+**Base URL:** `http://<host>:8088`
 
 ---
 
@@ -15,7 +15,7 @@ GET /health
 Returns which models are currently loaded on the GPU.
 
 ```bash
-curl http://localhost:8080/health
+curl http://localhost:8088/health
 ```
 
 ```json
@@ -44,7 +44,7 @@ POST /v1/chat/completions
 ### Request
 
 ```bash
-curl -X POST http://localhost:8080/v1/chat/completions \
+curl -X POST http://localhost:8088/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "qwen",
@@ -98,7 +98,7 @@ curl -X POST http://localhost:8080/v1/chat/completions \
 ### Streaming
 
 ```bash
-curl -X POST http://localhost:8080/v1/chat/completions \
+curl -X POST http://localhost:8088/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "qwen",
@@ -124,7 +124,7 @@ data: [DONE]
 Qwen 3.5 supports image inputs via base64 or URL:
 
 ```bash
-curl -X POST http://localhost:8080/v1/chat/completions \
+curl -X POST http://localhost:8088/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "qwen",
@@ -158,7 +158,7 @@ POST /v1/audio/transcriptions
 ### Request
 
 ```bash
-curl -X POST http://localhost:8080/v1/audio/transcriptions \
+curl -X POST http://localhost:8088/v1/audio/transcriptions \
   -F "file=@recording.wav" \
   -F "model=whisper" \
   -F "response_format=json"
@@ -215,7 +215,7 @@ POST /v1/forecast
 ### Request
 
 ```bash
-curl -X POST http://localhost:8080/v1/forecast \
+curl -X POST http://localhost:8088/v1/forecast \
   -H "Content-Type: application/json" \
   -d '{
     "time_series": [[10, 20, 15, 25, 20, 30, 25, 35, 30, 40]],
@@ -272,7 +272,7 @@ curl -X POST http://localhost:8080/v1/forecast \
 Send multiple series in one request:
 
 ```bash
-curl -X POST http://localhost:8080/v1/forecast \
+curl -X POST http://localhost:8088/v1/forecast \
   -H "Content-Type: application/json" \
   -d '{
     "time_series": [
@@ -308,7 +308,7 @@ First request after idle takes ~12-15s (loading 200M model to GPU + JIT compilat
 ```python
 import requests
 
-BASE = "http://localhost:8080"
+BASE = "http://localhost:8088"
 
 # Chat
 resp = requests.post(f"{BASE}/v1/chat/completions", json={
@@ -340,7 +340,7 @@ print(resp.json()["text"])
 ### JavaScript/TypeScript
 
 ```typescript
-const BASE = "http://localhost:8080";
+const BASE = "http://localhost:8088";
 
 // Chat (OpenAI SDK compatible)
 import OpenAI from "openai";
@@ -370,7 +370,7 @@ The chat endpoint is fully compatible with the OpenAI Python/JS SDK:
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8080/v1", api_key="unused")
+client = OpenAI(base_url="http://localhost:8088/v1", api_key="unused")
 
 response = client.chat.completions.create(
     model="qwen",
@@ -398,7 +398,7 @@ All models share one Tesla P40 (24 GB VRAM). Each model loads independently on f
 ### Check What's Loaded
 
 ```bash
-curl http://localhost:8080/health
+curl http://localhost:8088/health
 ```
 
 ---
