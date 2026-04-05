@@ -19,11 +19,12 @@ START_TIMEOUT = int(os.environ.get("START_TIMEOUT", "120"))
 
 
 class Service:
-    def __init__(self, name, cmd, port, health_path="/v1/models"):
+    def __init__(self, name, cmd, port, health_path="/v1/models", path_rewrites=None):
         self.name = name
         self.cmd = cmd
         self.port = port
         self.health_path = health_path
+        self.path_rewrites = path_rewrites or {}
         self.process = None
         self.last_active = 0.0
         self.lock = threading.Lock()
@@ -70,6 +71,7 @@ class Service:
                 self.process = None
 
     def proxy(self, path, headers, body, method):
+        path = self.path_rewrites.get(path, path)
         url = f"http://127.0.0.1:{self.port}{path}"
         try:
             req = urllib.request.Request(url, data=body, headers=headers, method=method)
@@ -108,9 +110,9 @@ qwen = Service("qwen", [
 whisper = Service("whisper", [
     "whisper-server",
     "-m", "/models/ggml-base.en-q5_1.bin",
-    "-ngl", "99",
     "--port", "9181", "--host", "127.0.0.1",
-], port=9181)
+], port=9181, health_path="/health",
+   path_rewrites={"/v1/audio/transcriptions": "/inference"})
 
 timesfm = Service("timesfm", [
     "python3", "/app/timesfm_worker.py",
