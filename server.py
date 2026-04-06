@@ -14,17 +14,24 @@ PORT = int(os.environ.get("PORT", "8080"))
 IDLE_TIMEOUT = int(os.environ.get("IDLE_TIMEOUT", "300"))
 START_TIMEOUT = int(os.environ.get("START_TIMEOUT", "120"))
 
+try:
+    SYSTEM_PROMPT = open("/app/system-prompt.txt").read().strip()
+except FileNotFoundError:
+    SYSTEM_PROMPT = None
+    log.warning("system-prompt.txt not found — qwen will use no default system prompt")
+
 
 # ── Subprocess service ──────────────────────────────────────────
 
 
 class Service:
-    def __init__(self, name, cmd, port, health_path="/v1/models", path_rewrites=None):
+    def __init__(self, name, cmd, port, health_path="/v1/models", path_rewrites=None, system_prompt=None):
         self.name = name
         self.cmd = cmd
         self.port = port
         self.health_path = health_path
         self.path_rewrites = path_rewrites or {}
+        self.system_prompt = system_prompt
         self.process = None
         self.last_active = 0.0
         self.lock = threading.Lock()
@@ -72,6 +79,17 @@ class Service:
 
     def proxy(self, path, headers, body, method):
         path = self.path_rewrites.get(path, path)
+        if self.system_prompt and body and method == "POST":
+            try:
+                data = json.loads(body)
+                msgs = data.get("messages", [])
+                if msgs and msgs[0].get("role") != "system":
+                    data["messages"] = [{"role": "system", "content": self.system_prompt}] + msgs
+                    body = json.dumps(data).encode()
+                    headers = dict(headers)
+                    headers["Content-Length"] = str(len(body))
+            except Exception:
+                pass
         url = f"http://127.0.0.1:{self.port}{path}"
         try:
             req = urllib.request.Request(url, data=body, headers=headers, method=method)
@@ -96,32 +114,68 @@ class Service:
 
 # ── Services ────────────────────────────────────────────────────
 
-
 qwen = Service("qwen", [
+    "llama-server",
+    "-m", "/models/Qwen3.5-9B.Q8_0.gguf",
+    "--cache-type-k", "turbo4",
+    "--cache-type-v", "f16",
+    "-ngl", "99",
+    "-c", "262144",
+    "--host", "0.0.0.0",
+    "--port", "9180",
+    "--no-mmap",
+    "--flash-attn", "on",
+    "--no-webui",
+    "--temp", "0.80",
+    "--top-k", "64",
+    "--top-p", "0.95",
+    "--min-p", "0.10",
+    "--typical-p", "0.9",
+    "--xtc-probability", "0.0",
+    "--dynatemp-range", "0.0",
+    "--n-predict", "8192",
+    "--repeat-last-n", "-1",
+    "--repeat-penalty", "1.0",
+    "--presence-penalty", "0.0",
+    "--frequency-penalty", "0.0",
+    "--dry-multiplier", "0.85",
+    "--dry-base", "1.75",
+    "--dry-allowed-length", "2",
+    "--dry-penalty-last-n", "-1",
+], port=9180, system_prompt=SYSTEM_PROMPT)
+
+qwen_transcribe = Service("qwen-transcribe", [
     "llama-server",
     "-m", "/models/Qwen3.5-0.8B-Q5_K_M.gguf",
     "--mmproj", "/models/mmproj-F32.gguf",
     "-c", "32768",
-    "--cache-type-k", "q8_0", "--cache-type-v", "q8_0",
-    "-ngl", "99", "--n-gpu-layers", "99",
-    "--port", "9180", "--host", "127.0.0.1", "--no-mmap",
-], port=9180)
+    "--cache-type-k", "q8_0",
+    "--cache-type-v", "q8_0",
+    "-ngl", "99",
+    "--port", "9181",
+    "--host", "127.0.0.1",
+    "--no-mmap",
+    "--no-webui",
+], port=9181, path_rewrites={"/v1/transcribe": "/v1/chat/completions"})
 
 whisper = Service("whisper", [
     "whisper-server",
-    "-m", "/models/ggml-base.en-q5_1.bin",
-    "--port", "9181", "--host", "127.0.0.1",
-], port=9181, health_path="/health",
+    "-m", "/models/ggml-large-v3-turbo-q8_0.bin",
+    "--port", "9182",
+    "--host", "127.0.0.1",
+], port=9182, health_path="/health",
    path_rewrites={"/v1/audio/transcriptions": "/inference"})
 
 timesfm = Service("timesfm", [
+    "env", "TIMESFM_PORT=9183",
     "python3", "/app/timesfm_worker.py",
-], port=9182)
+], port=9183)
 
 ROUTES = [
-    ("/v1/chat",     qwen),
-    ("/v1/audio",    whisper),
-    ("/v1/forecast", timesfm),
+    ("/v1/chat",       qwen),
+    ("/v1/transcribe", qwen_transcribe),
+    ("/v1/audio",      whisper),
+    ("/v1/forecast",   timesfm),
 ]
 
 
@@ -132,7 +186,7 @@ def idle_reaper():
     while True:
         time.sleep(30)
         now = time.time()
-        for svc in (qwen, whisper, timesfm):
+        for svc in (qwen, qwen_transcribe, whisper, timesfm):
             if svc.active and svc.last_active and now - svc.last_active > IDLE_TIMEOUT:
                 svc.stop()
 
