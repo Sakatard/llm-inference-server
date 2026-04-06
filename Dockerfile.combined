@@ -9,12 +9,17 @@ RUN apt-get update && apt-get install -y \
 # Ivy Bridge ISA flags (no AVX2, no FMA, no BMI1/BMI2, no AVX512)
 ENV IVY_CFLAGS="-march=x86-64 -msse4.2 -mavx -mno-avx2 -mno-fma -mno-avx512f -mno-bmi -mno-bmi2"
 
-# --- Build llama.cpp ---
+# --- Build llama.cpp (TurboQuant fork — adds turbo4 KV cache type) ---
 WORKDIR /build/llama.cpp
-RUN git clone --depth 1 https://github.com/ggerganov/llama.cpp.git .
+RUN git clone --branch feature/turboquant-kv-cache --depth 1 \
+    https://github.com/TheTom/llama-cpp-turboquant.git .
+# Fix extern "C" linkage error in TurboQuant fork
+RUN sed -i 's/extern "C" GGML_API int turbo3_cpu_wht_group_size;/extern "C" int turbo3_cpu_wht_group_size;/g' \
+    ggml/src/ggml-cpu/ops.cpp || true
 RUN cmake -B build \
     -DGGML_CUDA=ON \
     -DCMAKE_CUDA_ARCHITECTURES=61 \
+    -DCMAKE_BUILD_TYPE=Release \
     -DGGML_NATIVE=OFF \
     -DGGML_CUDA_NO_VMM=ON \
     -DGGML_CUDA_FORCE_MMQ=ON \
@@ -26,6 +31,7 @@ RUN cmake -B build \
     -DGGML_BMI2=OFF \
     -DCMAKE_C_FLAGS="$IVY_CFLAGS" \
     -DCMAKE_CXX_FLAGS="$IVY_CFLAGS" \
+    -DCMAKE_CUDA_FLAGS="-Wno-deprecated-gpu-targets" \
     -DLLAMA_SERVER=ON \
     -DLLAMA_FFMPEG=ON \
     -DLLAMA_BUILD_EXAMPLES=OFF \
@@ -35,10 +41,11 @@ RUN cmake -B build \
 # --- Build whisper.cpp ---
 WORKDIR /build/whisper.cpp
 RUN git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git .
-RUN ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/lib/x86_64-linux-gnu/libcuda.so.1
+RUN ln -s /usr/local/cuda/lib64/stubs/libcuda.so /usr/lib/x86_64-linux-gnu/libcuda.so.1 2>/dev/null || true
 RUN cmake -B build \
     -DGGML_CUDA=ON \
     -DCMAKE_CUDA_ARCHITECTURES=61 \
+    -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_EXE_LINKER_FLAGS="-L/usr/local/cuda/lib64/stubs" \
     -DGGML_NATIVE=OFF \
     -DGGML_AVX=ON \
@@ -49,10 +56,11 @@ RUN cmake -B build \
     -DGGML_BMI2=OFF \
     -DCMAKE_C_FLAGS="$IVY_CFLAGS" \
     -DCMAKE_CXX_FLAGS="$IVY_CFLAGS" \
+    -DCMAKE_CUDA_FLAGS="-Wno-deprecated-gpu-targets" \
     -DWHISPER_BUILD_EXAMPLES=ON \
     -DWHISPER_BUILD_SERVER=ON \
-    -DWHISPER_BUILD_TESTS=OFF \
-    && cmake --build build --config Release --target whisper-server -j$(nproc)
+    -DWHISPER_BUILD_TESTS=OFF
+RUN cmake --build /build/whisper.cpp/build --config Release --target whisper-server -j$(nproc)
 
 # Collect shared libs
 RUN mkdir -p /build/libs && find /build -name "*.so*" -exec cp -a {} /build/libs/ \;
@@ -84,6 +92,7 @@ RUN cd /app/timesfm && pip install --no-cache-dir "."
 
 COPY server.py /app/server.py
 COPY timesfm_worker.py /app/timesfm_worker.py
+COPY system-prompt.txt /app/system-prompt.txt
 
 EXPOSE 8080
 CMD ["python3", "/app/server.py"]
