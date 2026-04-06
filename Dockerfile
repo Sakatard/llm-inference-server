@@ -29,7 +29,7 @@ RUN cmake -B build \
     -DLLAMA_FFMPEG=ON \
     -DLLAMA_BUILD_SERVER=ON \
     -DBUILD_SHARED_LIBS=OFF \
-    -DCMAKE_CUDA_FLAGS="-Wno-deprecated-gpu-targets
+    -DCMAKE_CUDA_FLAGS="-Wno-deprecated-gpu-targets"
 
 RUN cmake --build build --config Release -j$(nproc)
 

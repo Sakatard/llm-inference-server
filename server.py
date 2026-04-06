@@ -14,7 +14,11 @@ PORT = int(os.environ.get("PORT", "8080"))
 IDLE_TIMEOUT = int(os.environ.get("IDLE_TIMEOUT", "300"))
 START_TIMEOUT = int(os.environ.get("START_TIMEOUT", "120"))
 
-SYSTEM_PROMPT = open("/app/system-prompt.txt").read().strip()
+try:
+    SYSTEM_PROMPT = open("/app/system-prompt.txt").read().strip()
+except FileNotFoundError:
+    SYSTEM_PROMPT = None
+    log.warning("system-prompt.txt not found — qwen will use no default system prompt")
 
 
 # ── Subprocess service ──────────────────────────────────────────
