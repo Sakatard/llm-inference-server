@@ -116,32 +116,31 @@ class Service:
 
 qwen = Service("qwen", [
     "llama-server",
-    "-m", "/models/Qwen3.5-9B.Q8_0.gguf",
+    "-m", "/models/Qwen3.6-27B-Q4_K_M.gguf",
+    "--jinja",
     "--cache-type-k", "turbo4",
-    "--cache-type-v", "f16",
+    "--cache-type-v", "turbo4",
     "-ngl", "99",
-    "-c", "262144",
+    "-c", "65536",
     "--host", "0.0.0.0",
     "--port", "9180",
-    "--no-mmap",
     "--flash-attn", "on",
     "--no-webui",
-    "--temp", "0.80",
-    "--top-k", "64",
+    "--temp", "0.6",
+    "--top-k", "20",
     "--top-p", "0.95",
-    "--min-p", "0.10",
-    "--typical-p", "0.9",
+    "--min-p", "0.0",
+    "--typical-p", "1.0",
     "--xtc-probability", "0.0",
     "--dynatemp-range", "0.0",
-    "--n-predict", "8192",
+    "--n-predict", "4096",
     "--repeat-last-n", "-1",
     "--repeat-penalty", "1.0",
     "--presence-penalty", "0.0",
     "--frequency-penalty", "0.0",
-    "--dry-multiplier", "0.85",
-    "--dry-base", "1.75",
-    "--dry-allowed-length", "2",
-    "--dry-penalty-last-n", "-1",
+    "--dry-multiplier", "0.0",
+    "--reasoning", "auto",
+    "--reasoning-budget", "2048",
 ], port=9180, system_prompt=SYSTEM_PROMPT)
 
 qwen_transcribe = Service("qwen-transcribe", [
@@ -171,6 +170,24 @@ timesfm = Service("timesfm", [
     "python3", "/app/timesfm_worker.py",
 ], port=9183)
 
+qwen_planner = Service("qwen-planner", [
+    "llama-server",
+    "-m", "/models/Qwen3-1.7B-Q4_K_M.gguf",
+    "-c", "32768",
+    "--cache-type-k", "q8_0",
+    "--cache-type-v", "q8_0",
+    "-ngl", "99",
+    "--host", "127.0.0.1",
+    "--port", "9185",
+    "--no-mmap",
+    "--no-webui",
+    "--jinja",
+], port=9185)
+
+CHAT_MODELS = {
+    "qwen-planner": qwen_planner,
+}
+
 ROUTES = [
     ("/v1/chat",       qwen),
     ("/v1/transcribe", qwen_transcribe),
@@ -186,7 +203,7 @@ def idle_reaper():
     while True:
         time.sleep(30)
         now = time.time()
-        for svc in (qwen, qwen_transcribe, whisper, timesfm):
+        for svc in (qwen, qwen_transcribe, whisper, timesfm, qwen_planner):
             if svc.active and svc.last_active and now - svc.last_active > IDLE_TIMEOUT:
                 svc.stop()
 
@@ -211,6 +228,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _route(self):
         body = self._body()
+        if self.command == "POST" and self.path.startswith("/v1/chat"):
+            svc = qwen
+            try:
+                model = json.loads(body or b"{}").get("model", "")
+                svc = CHAT_MODELS.get(model, qwen)
+            except Exception:
+                pass
+            return self._send(*svc.handle(self.path, dict(self.headers), body, self.command))
         for prefix, svc in ROUTES:
             if self.path.startswith(prefix):
                 return self._send(*svc.handle(
@@ -222,7 +247,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/health":
             status = {s.name: s.active for _, s in ROUTES}
+            status[qwen_planner.name] = qwen_planner.active
             body = json.dumps({"status": "ok", "active": status}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        if self.path == "/v1/models":
+            models = {"object": "list", "data": [
+                {"id": "qwen", "object": "model", "owned_by": "local"},
+                {"id": "qwen-transcribe", "object": "model", "owned_by": "local"},
+                {"id": "whisper", "object": "model", "owned_by": "local"},
+                {"id": "timesfm", "object": "model", "owned_by": "local"},
+                {"id": "qwen-planner", "object": "model", "owned_by": "local"},
+            ]}
+            body = json.dumps(models).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()

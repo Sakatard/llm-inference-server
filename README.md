@@ -1,8 +1,8 @@
 # LLM Inference Server
 
-Unified GPU inference server running **Qwen 3.5** (chat + vision), **Whisper** (audio transcription), and **TimesFM 2.5** (time-series forecasting) on a single Tesla P40.
+Unified GPU inference server running a routed **Qwen 3.6 27B** chat/coding model, selectable **qwen-planner** chat routing, **Qwen 3.5 0.8B** for multimodal transcription and vision-audio input, **Whisper** for audio transcription, and **TimesFM 2.5** for general-purpose numeric time-series forecasting on a single Tesla P40.
 
-One container. One port. Four models. Each model loads only when you need it and unloads itself after sitting idle — so the GPU drops back to ~12W when nothing is happening.
+One container. One port. Multiple model routes. Each model loads only when you need it and unloads itself after a period of inactivity, so the GPU drops back toward idle power when nothing is happening. In the included `docker-compose.yaml`, that timeout is currently set to 20 minutes (`IDLE_TIMEOUT=1200`), which overrides the `server.py` application default of 5 minutes (`300` seconds). The longer compose timeout helps avoid repeated unload/reload churn for bigger chat and coding workloads.
 
 ---
 
@@ -10,29 +10,30 @@ One container. One port. Four models. Each model loads only when you need it and
 
 If you've landed here and aren't sure what this project does, here's the short version:
 
-This runs several AI models on your machine in a single Docker container, accessible over a simple HTTP API. You send a request, the right model wakes up, does its job, and you get an answer back. No cloud. No API keys. No per-request fees.
+This runs several AI models on your machine in a single Docker container, accessible over a simple HTTP API. You send a request, the server wakes the right model, does the work, and sends the result back. No cloud. No API keys. No per-request fees.
 
 **What the models do:**
 
 | Model | What it's for |
 |-------|--------------|
-| Qwen 3.5 9B | General chat — answering questions, writing, reasoning |
-| Qwen 3.5 0.8B | Lightweight chat with vision/audio input support |
+| Qwen 3.6 27B | Default general chat and coding assistant model |
+| qwen-planner (Qwen 3 1.7B) | Lightweight planner model selectable via chat `model` |
+| Qwen 3.5 0.8B | Lightweight multimodal transcription / vision-audio route |
 | Whisper large-v3-turbo | Transcribes audio files to text |
-| TimesFM 2.5 | Forecasts future values in a numeric time series |
+| TimesFM 2.5 | General-purpose numeric time-series forecasting |
 
 **What you need to run it:**
 
 - Docker and Docker Compose installed
 - An NVIDIA GPU with at least 20 GB of VRAM (tested on Tesla P40, 24 GB)
 - The NVIDIA Container Toolkit (`nvidia-docker2`) so Docker can access your GPU
-- The model files (see [Getting the Models](#getting-the-models) below)
+- The model files listed below
 
 ---
 
 ## Getting the Models
 
-Model files are **not included** in this repo — they're too large. You need to download them separately and place them in the `models/` folder next to your `docker-compose.yaml`.
+Model files are **not included** in this repo. Put them in the `models/` folder next to your `docker-compose.yaml`.
 
 Create the folder if it doesn't exist:
 
@@ -40,34 +41,24 @@ Create the folder if it doesn't exist:
 mkdir -p models
 ```
 
-Then download each model:
+Place these files in `models/`:
 
-**Qwen 3.5 9B (chat)**
-```bash
-# ~9.5 GB
-wget -P models/ https://huggingface.co/Qwen/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B.Q8_0.gguf
-```
+- `Qwen3.6-27B-Q4_K_M.gguf` — default chat and coding model
+- `Qwen3-1.7B-Q4_K_M.gguf` — planner model used when chat requests set `model` to `qwen-planner`
+- `Qwen3.5-0.8B-Q5_K_M.gguf` — multimodal transcription / vision-audio route
+- `mmproj-F32.gguf` — vision projector for the multimodal Qwen route
+- `ggml-large-v3-turbo-q8_0.bin` — Whisper model
 
-**Qwen 3.5 0.8B + vision projector**
-```bash
-# ~0.5 GB + ~0.3 GB
-wget -P models/ https://huggingface.co/Qwen/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q5_K_M.gguf
-wget -P models/ https://huggingface.co/Qwen/Qwen3.5-0.8B-GGUF/resolve/main/mmproj-F32.gguf
-```
+You can download the Qwen GGUF files from Hugging Face's Qwen releases and the Whisper file from `ggerganov/whisper.cpp`.
 
-**Whisper large-v3-turbo**
-```bash
-# ~1.6 GB
-wget -P models/ https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo-q8_0.bin
-```
-
-**TimesFM** is downloaded automatically on first use (cached to `models/huggingface/`).
+**TimesFM** is downloaded automatically on first use into Hugging Face's cache at `/models/huggingface` inside the container. Because `docker-compose.yaml` mounts `./models:/models` and `Dockerfile.combined` sets `HF_HOME=/models/huggingface`, those downloaded files persist on the host under `./models/huggingface/`.
 
 Your `models/` folder should look like this when ready:
 
-```
+```text
 models/
-├── Qwen3.5-9B.Q8_0.gguf
+├── Qwen3.6-27B-Q4_K_M.gguf
+├── Qwen3-1.7B-Q4_K_M.gguf
 ├── Qwen3.5-0.8B-Q5_K_M.gguf
 ├── mmproj-F32.gguf
 └── ggml-large-v3-turbo-q8_0.bin
@@ -84,7 +75,7 @@ docker compose build
 # Start in the background
 docker compose up -d
 
-# Confirm it's running (all models will show false until first request — that's normal)
+# Confirm it's running (models show false until first request — that's normal)
 curl http://localhost:8088/health
 ```
 
@@ -92,19 +83,37 @@ curl http://localhost:8088/health
 
 ## Configuration
 
-Create a `.env` file next to your `docker-compose.yaml` to override defaults:
+Right now, the included `docker-compose.yaml` does **not** load a `.env` file. It passes only one setting directly to the container:
 
-```env
-# .env
+- `IDLE_TIMEOUT=1200`
 
-# How long (seconds) a model stays loaded after its last request before unloading
-IDLE_TIMEOUT=300
+Important distinction:
+- `server.py` application default: `IDLE_TIMEOUT=300` seconds (5 minutes) if no environment variable is provided
+- Current `docker-compose.yaml` override: `IDLE_TIMEOUT=1200` seconds (20 minutes)
 
-# How long (seconds) to wait for a model to finish starting before giving up
-START_TIMEOUT=120
+So with the provided compose file, models stay loaded for **20 minutes / 1200 seconds** after their last request before unloading. This keeps the large chat/coding model warm longer so repeated coding sessions do not keep paying cold-start cost.
+
+If you want to change that timeout, edit `docker-compose.yaml` directly:
+
+```yaml
+environment:
+  - IDLE_TIMEOUT=1200
 ```
 
-These are already set to sensible defaults — you only need the `.env` if you want to change them.
+For example, to keep models loaded for 10 minutes instead of 20, change it to:
+
+```yaml
+environment:
+  - IDLE_TIMEOUT=600
+```
+
+Then recreate the container so Docker uses the updated setting:
+
+```bash
+docker compose up -d --force-recreate
+```
+
+`server.py` also supports `START_TIMEOUT`, but the current `docker-compose.yaml` does not pass it through. If you want to use it, add it under `environment:` in `docker-compose.yaml` yourself.
 
 ---
 
@@ -124,10 +133,8 @@ services:
       - "8088:8080"      # Host port 8088 maps to container port 8080
     volumes:
       - ./models:/models  # Your models folder is mounted here
-    env_file:
-      - .env
     environment:
-      - IDLE_TIMEOUT=300
+      - IDLE_TIMEOUT=1200
     deploy:
       resources:
         reservations:
@@ -145,28 +152,31 @@ The build has two stages:
 1. **Builder** — compiles `llama-server` (with TurboQuant KV cache support) and `whisper-server` from source, optimised for your CPU (Ivy Bridge flags — no AVX2/FMA)
 2. **Final image** — copies the compiled binaries in, installs PyTorch 2.4.1, installs TimesFM, copies `server.py`
 
-You do not need to modify the Dockerfile unless you're changing hardware targets (CUDA architecture, CPU flags).
-
 ---
 
 ## How It Works
 
-```
+```text
   You → :8088 (host) → :8080 (container)
                            │
                       server.py
-                      (pure Python router)
-                           │
-           ┌───────────────┼───────────────┐
-           │               │               │
-     llama-server    whisper-server   timesfm_worker.py
-      :9180 qwen       :9182             :9183
-      :9181 0.8B
+                    (pure Python router)
+                     /    |     |    \
+                    /     |     |     \
+                qwen   whisper timesfm qwen-transcribe
+                  |
+           qwen-planner selectable
+           via chat model routing
 ```
 
-`server.py` is the only process that stays running all the time. It listens for requests and launches the right model as a subprocess when needed. When a model hasn't been used for `IDLE_TIMEOUT` seconds, it's shut down and VRAM is freed.
+`server.py` is the only process that stays running all the time. It listens for requests and launches the right model as a subprocess when needed. In code, the application default is `IDLE_TIMEOUT=300` seconds unless the environment overrides it. In the provided compose setup, Docker injects `IDLE_TIMEOUT=1200`, so a model is shut down after 20 minutes of inactivity and VRAM is freed.
 
-Because `server.py` itself imports no GPU libraries, the GPU sits at P8 state (~12W) when all models are idle.
+Chat requests are routed by the `model` field:
+
+- `"qwen"` or omitted `model` → default Qwen 3.6 27B chat/coding route
+- `"qwen-planner"` → lightweight planner chat route
+
+Because `server.py` itself imports no GPU libraries, the GPU sits at P8 state when all models are idle.
 
 ---
 
@@ -176,17 +186,18 @@ All endpoints are on `http://localhost:8088`.
 
 | Method | Path | Model | Description |
 |--------|------|-------|-------------|
-| `POST` | `/v1/chat/completions` | Qwen 9B | OpenAI-compatible chat |
-| `POST` | `/v1/transcribe` | Qwen 0.8B | Multimodal transcription |
-| `POST` | `/v1/audio/transcriptions` | Whisper | Audio-to-text |
-| `POST` | `/v1/forecast` | TimesFM | Time-series forecasting |
-| `GET`  | `/health` | — | Shows which models are currently loaded |
+| `POST` | `/v1/chat/completions` | `qwen` by default, `qwen-planner` selectable | OpenAI-compatible chat |
+| `POST` | `/v1/transcribe` | Qwen 3.5 0.8B | Multimodal transcription |
+| `POST` | `/v1/audio/transcriptions` | Whisper | Audio-to-text; request is routed to the local Whisper service |
+| `POST` | `/v1/forecast` | TimesFM | Numeric time-series forecasting |
+| `GET`  | `/v1/models` | — | Lists available routed model IDs (`whisper` is the advertised Whisper ID) |
+| `GET`  | `/health` | — | Shows which model routes are currently loaded |
 
-See [API.md](API.md) for full request/response documentation.
+See [API.md](API.md) for the full request and response details.
 
 ### Quick examples
 
-**Chat:**
+**Default chat (`qwen`):**
 ```bash
 curl -X POST http://localhost:8088/v1/chat/completions \
   -H "Content-Type: application/json" \
@@ -197,28 +208,48 @@ curl -X POST http://localhost:8088/v1/chat/completions \
   }'
 ```
 
+**Planner chat (`qwen-planner`):**
+```bash
+curl -X POST http://localhost:8088/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "qwen-planner",
+    "messages": [{"role": "user", "content": "Give me a short step-by-step plan to migrate an API client."}],
+    "max_tokens": 500
+  }'
+```
+
 **Transcribe audio:**
 ```bash
 curl -X POST http://localhost:8088/v1/audio/transcriptions \
   -F "file=@recording.wav" \
-  -F "model=whisper-1"
+  -F "model=whisper"
 ```
 
-**Forecast:**
+For this endpoint, the proxy routes requests to the local Whisper service. `/v1/models` advertises the local model ID as `whisper`, and that is the safest value to send. The submitted `model` form field is not used to pick between multiple Whisper backends here.
+
+**Forecast a numeric time series:**
 ```bash
 curl -X POST http://localhost:8088/v1/forecast \
   -H "Content-Type: application/json" \
   -d '{
-    "time_series": [[10, 20, 15, 25, 20, 30, 25, 35]],
-    "horizon": 5
+    "time_series": [[100, 102, 101, 105, 107, 109]],
+    "horizon": 3
   }'
 ```
 
-**Using the OpenAI Python SDK:**
+`time_series` is a list of one or more numeric series. The example above sends one series, but you can batch multiple series in the same request by adding more inner arrays.
+
+**List available model IDs:**
+```bash
+curl http://localhost:8088/v1/models
+```
+
+**Python (OpenAI SDK):**
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8088/v1", api_key="unused")
+client = OpenAI(base_url="http://localhost:8088/v1", api_key="dummy")
 
 response = client.chat.completions.create(
     model="qwen",
@@ -228,25 +259,22 @@ response = client.chat.completions.create(
 print(response.choices[0].message.content)
 ```
 
-> **Note on `max_tokens`:** The Qwen models use chain-of-thought reasoning by default, which means they think silently before answering. Always set `max_tokens` to at least 300–500 or the model may run out of budget mid-thought and return an empty response.
+> **Note on `max_tokens`:** The default `qwen` chat route enables reasoning, so it may think silently before answering. `qwen-planner` is still a chat route, but this README should not assume it uses the same reasoning mode by default. For the default `qwen` route, set `max_tokens` to at least 300–500 or the model may run out of budget and return an incomplete response.
+
+> **Operational note:** TimesFM cold starts can be noticeably slower than a warm request. If you're building a downstream app, a simple cache-first/background-refresh pattern can keep forecast paths responsive.
 
 ---
 
-## VRAM Usage
+## GPU Behavior
 
-With all four models loaded simultaneously (~18.9 GB on a 24 GB P40):
+This project is designed to keep a single GPU useful without leaving every model loaded all the time.
 
-| State | VRAM used | Power | GPU state |
-|-------|-----------|-------|-----------|
-| All idle | ~200 MiB | 12W | P8 |
-| Qwen 9B only | ~10.5 GB | 55W | P0 |
-| Qwen 0.8B only | ~1.5 GB | 55W | P0 |
-| Whisper only | ~2.5 GB | 55W | P0 |
-| TimesFM only | ~6.5 GB | 55W | P0 |
-| All four loaded | ~18.9 GB | 60W | P0 |
-| After idle timeout | → ~200 MiB | → 12W | → P8 |
-
-In practice models rarely all load at once — the idle reaper frees each one independently.
+- The Python router stays up continuously.
+- Each model route loads on first use.
+- Each route unloads independently after the configured idle timeout.
+- App default: 5 minutes (`300` seconds) in `server.py`.
+- Current compose override: 20 minutes (`1200` seconds).
+- The big Qwen 3.6 chat/coding route is the heaviest path, which is why the longer timeout is helpful for repeated development work.
 
 ---
 
@@ -268,7 +296,7 @@ If you're on a different GPU, update `CMAKE_CUDA_ARCHITECTURES` in `Dockerfile.c
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `8080` | Internal container port (change the host-side mapping in docker-compose instead) |
-| `IDLE_TIMEOUT` | `300` | Seconds of inactivity before a model is unloaded |
+| `IDLE_TIMEOUT` | `300` app default; `1200` in current compose file | Seconds of inactivity before a model is unloaded |
 | `START_TIMEOUT` | `120` | Seconds to wait for a model to become healthy on startup |
 
 ---
@@ -278,7 +306,7 @@ If you're on a different GPU, update `CMAKE_CUDA_ARCHITECTURES` in `Dockerfile.c
 - **[llama.cpp (TurboQuant fork)](https://github.com/TheTom/llama-cpp-turboquant)** — C++ LLM inference with turbo4 KV cache quantisation
 - **[whisper.cpp](https://github.com/ggerganov/whisper.cpp)** — C++ inference for Whisper audio transcription
 - **[TimesFM](https://github.com/google-research/timesfm)** — Google Research time-series foundation model
-- **[Qwen 3.5](https://huggingface.co/Qwen)** — Alibaba's language/vision models
+- **[Qwen](https://huggingface.co/Qwen)** — Alibaba's language and multimodal models
 - **[OpenAI Whisper](https://github.com/openai/whisper)** — Original Whisper model weights
 - **[PyTorch](https://pytorch.org/)** — ML framework powering TimesFM (v2.4.1 for Pascal GPU)
 
