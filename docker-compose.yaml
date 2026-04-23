@@ -10,7 +10,7 @@ services:
     volumes:
       - ./models:/models
     environment:
-      - IDLE_TIMEOUT=300
+      - IDLE_TIMEOUT=1200
     deploy:
       resources:
         reservations:
