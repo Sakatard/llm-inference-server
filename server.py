@@ -14,6 +14,33 @@ PORT = int(os.environ.get("PORT", "8080"))
 IDLE_TIMEOUT = int(os.environ.get("IDLE_TIMEOUT", "300"))
 START_TIMEOUT = int(os.environ.get("START_TIMEOUT", "120"))
 
+# MTP (Multi-Token Prediction) self-speculative decoding via llama.cpp PR #22673.
+# Requires llama-server built from the turboquant fork with MTP merged in, plus
+# an MTP-converted GGUF (heads + projections preserved).
+ENABLE_MTP = os.environ.get("ENABLE_MTP", "0") == "1"
+MTP_MODEL_PATH = os.environ.get(
+    "MTP_MODEL_PATH", "/models/Qwen3.6-27B-IQ4_XS.gguf"
+)
+try:
+    MTP_DRAFT_N_MAX = int(os.environ.get("MTP_DRAFT_N_MAX", "3"))
+    assert 1 <= MTP_DRAFT_N_MAX <= 16
+except (ValueError, AssertionError):
+    sys.exit(f"MTP_DRAFT_N_MAX must be int 1..16, got {os.environ.get('MTP_DRAFT_N_MAX')!r}")
+# Probability threshold for accepting drafts. Unsloth 2026-05 recommends 0.75 with
+# n_max=6 for ~1.8x decode, but our integration commit (c85252627) ships an older
+# snapshot of PR #22673 where p_min=0.75 regresses (n=3 ceiling on 24 GB P40 at
+# 128k ctx prevents the n=6 synergy). Keep 0.0 until we rebase the integration
+# onto a newer PR head.
+MTP_DRAFT_P_MIN = os.environ.get("MTP_DRAFT_P_MIN", "0.0")
+# Cache type only applies when MTP is on; non-MTP baseline stays hardcoded turbo4.
+# turbo4 on draft path may degrade acceptance — override to f16/q8_0 during A/B.
+MTP_CACHE_TYPE = os.environ.get("MTP_CACHE_TYPE", "turbo4")
+# f16/q8_0 caches blow past 24 GB VRAM at 65k context with the 17 GB MTP model;
+# auto-shrink context when running an unquantised cache type unless overridden.
+MTP_CTX = os.environ.get(
+    "MTP_CTX", "65536" if MTP_CACHE_TYPE == "turbo4" else "32768"
+)
+
 try:
     SYSTEM_PROMPT = open("/app/system-prompt.txt").read().strip()
 except FileNotFoundError:
@@ -49,7 +76,7 @@ class Service:
         with self.lock:
             if self.process and self.process.poll() is None and self.is_healthy():
                 return True
-            log.info("[%s] Starting…", self.name)
+            log.info("[%s] Starting… cmd: %s", self.name, " ".join(self.cmd))
             self.process = subprocess.Popen(
                 self.cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE
             )
@@ -114,14 +141,30 @@ class Service:
 
 # ── Services ────────────────────────────────────────────────────
 
+_qwen_reasoning_args = ["--reasoning", "auto", "--reasoning-budget", "2048"]
+if ENABLE_MTP:
+    _qwen_model = MTP_MODEL_PATH
+    _qwen_cache_type = MTP_CACHE_TYPE
+    _qwen_ctx = MTP_CTX
+    _qwen_spec_args = [
+        "--spec-type", "draft-mtp",
+        "--spec-draft-n-max", str(MTP_DRAFT_N_MAX),
+        "--spec-draft-p-min", MTP_DRAFT_P_MIN,
+    ]
+else:
+    _qwen_model = "/models/Qwen3.6-27B-Q4_K_M.gguf"
+    _qwen_cache_type = "turbo4"
+    _qwen_ctx = "65536"
+    _qwen_spec_args = []
+
 qwen = Service("qwen", [
     "llama-server",
-    "-m", "/models/Qwen3.6-27B-Q4_K_M.gguf",
+    "-m", _qwen_model,
     "--jinja",
-    "--cache-type-k", "turbo4",
-    "--cache-type-v", "turbo4",
+    "--cache-type-k", _qwen_cache_type,
+    "--cache-type-v", _qwen_cache_type,
     "-ngl", "99",
-    "-c", "65536",
+    "-c", _qwen_ctx,
     "--host", "0.0.0.0",
     "--port", "9180",
     "--flash-attn", "on",
@@ -139,8 +182,8 @@ qwen = Service("qwen", [
     "--presence-penalty", "0.0",
     "--frequency-penalty", "0.0",
     "--dry-multiplier", "0.0",
-    "--reasoning", "auto",
-    "--reasoning-budget", "2048",
+    *_qwen_reasoning_args,
+    *_qwen_spec_args,
 ], port=9180, system_prompt=SYSTEM_PROMPT)
 
 qwen_transcribe = Service("qwen-transcribe", [
