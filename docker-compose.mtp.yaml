@@ -1,0 +1,12 @@
+services:
+  llm-inference-server:
+    volumes:
+      - ./models:/models
+      - ./server.py:/app/server.py:ro
+    environment:
+      - IDLE_TIMEOUT=1200
+      - ENABLE_MTP=1
+      - MTP_CACHE_TYPE=turbo4
+      - MTP_CTX=131072
+      # MTP_MODEL_PATH override; server.py default = Qwen3.6-27B-IQ4_XS.gguf.
+      # - MTP_MODEL_PATH=/models/Qwen3.6-27B-Q4_K_M.gguf

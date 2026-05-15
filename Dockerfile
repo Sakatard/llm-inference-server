@@ -11,14 +11,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Ivy Bridge ISA flags (no AVX2, no FMA, no BMI1/BMI2, no AVX512)
 ENV IVY_CFLAGS="-march=x86-64 -msse4.2 -mavx -mno-avx2 -mno-fma -mno-avx512f -mno-bmi -mno-bmi2"
 
-# --- Build llama.cpp with TurboQuant---
+# --- Build llama.cpp (TurboQuant fork + MTP merge — adds turbo4 KV cache type
+#     and llama.cpp PR #22673 self-speculative MTP support) ---
+# Integration branch lives in Sakatard/llama-cpp-turboquant @ pinned SHA.
+# Bump the SHA below to advance the merged tree.
+ARG LLAMA_FORK_URL=https://github.com/Sakatard/llama-cpp-turboquant.git
+ARG LLAMA_FORK_SHA=c85252627d98583b2e6ba2fa3b28a20fa6198f6d
 WORKDIR /build/llama.cpp
-RUN git clone https://github.com/TheTom/llama-cpp-turboquant.git . && \
-    git checkout feature/turboquant-kv-cache
-
-# Fix linkage error
-RUN sed -i 's/extern "C" GGML_API int turbo3_cpu_wht_group_size;/extern "C" int turbo3_cpu_wht_group_size;/g' \
-    ggml/src/ggml-cpu/ops.cpp || true
+RUN git init -q . && \
+    git remote add origin "$LLAMA_FORK_URL" && \
+    git -c protocol.version=2 fetch --depth 1 origin "$LLAMA_FORK_SHA" && \
+    git checkout -q FETCH_HEAD && \
+    test "$(git rev-parse HEAD)" = "$LLAMA_FORK_SHA"
 
 # Build for P40
 RUN cmake -B build \
