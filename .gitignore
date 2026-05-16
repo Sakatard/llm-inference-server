@@ -11,3 +11,4 @@ artifacts/*.gguf
 
 __pycache__/
 *.pyc
+finetune/datasets/
