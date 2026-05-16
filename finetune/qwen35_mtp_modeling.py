@@ -1,6 +1,7 @@
 """Qwen3.5/3.6 MTP (Multi-Token Prediction) head — PyTorch implementation.
 
-Reverse-engineered from llama.cpp Sakatard/llama-cpp-turboquant @ c85252627
+Reverse-engineered from llama.cpp at the TurboQuant+MTP integration tree
+(upstream ggml-org/llama.cpp @ 253ba110b + patches/llama-cpp/0001-turboquant-mtp-base.patch),
 file `src/models/qwen35.cpp:487-626` (graph_mtp). Upstream transformers ships ZERO
 MTP code — only ignore-patterns dropping mtp.* tensors at load. This module
 restores MTP as a trainable PyTorch nn.Module.

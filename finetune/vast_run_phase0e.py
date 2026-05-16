@@ -27,9 +27,11 @@ SETUP_TIMEOUT_S = 3600
 SMOKE_TIMEOUT_S = 3600
 IMAGE = "pytorch/pytorch:2.6.0-cuda12.4-cudnn9-devel"
 DISK_GB = 300  # bumped from 200 per consensus: fp16 GGUF ≈ full fp16 size for 27B
-# Pin Sakatard/llama-cpp-turboquant SHA verified to have _Qwen35MtpMixin preservation path
-LLAMA_CPP_REPO = "https://github.com/Sakatard/llama-cpp-turboquant.git"
-LLAMA_CPP_SHA = "c85252627d98583b2e6ba2fa3b28a20fa6198f6d"
+# ABANDONED (transformers strips MTP at load). Phase 0e was historically run
+# against Sakatard/llama-cpp-turboquant @ c85252627; fork removed, kept here for
+# reproducibility — upstream + patches/llama-cpp/0001 yields the equivalent tree.
+LLAMA_CPP_REPO = "https://github.com/ggml-org/llama.cpp.git"
+LLAMA_CPP_SHA = "253ba110bcd372207ca7b0bb56f1ea10d60d53fd"
 
 REPO_DIR = Path(__file__).parent
 SMOKE_SCRIPT = REPO_DIR / "phase0e_smoke.py"

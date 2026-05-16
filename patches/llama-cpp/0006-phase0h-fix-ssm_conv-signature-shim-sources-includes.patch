@@ -1,0 +1,112 @@
+From 6aa9fd4873b74caf8e37e8944413a508af90109c Mon Sep 17 00:00:00 2001
+From: build <build@local>
+Date: Sat, 16 May 2026 15:22:29 +0800
+Subject: [PATCH 06/10] =?UTF-8?q?phase0h:=20fix=20ssm=5Fconv=20signature?=
+ =?UTF-8?q?=20+=20shim=20sources/includes=20=E2=80=94=20clean=20Pascal=20b?=
+ =?UTF-8?q?uild?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+ggml/src/ggml-cuda/ssm-conv.cu:
+  Restore Sakatard's 4-param signature (added bias_add_node) lost when I
+  wholesale-copied lucebox's 3-param impl. Param is ignored by lucebox path
+  but caller in ggml-cuda.cu uses 4-arg form for fusion paths.
+
+vendor/lucebox-hub/dflash/SAKATARD_INTEGRATION.cmake:
+  - Source list: fix qwen35_target_loader → gguf_target_loader, add
+    qwen35_backend.cpp + graph_builders.cpp (header deps)
+  - Includes: DFLASH_ROOT/include (dflash27b.h), DFLASH_SRC/{qwen35,common}
+    (step_graph.h etc), CUDAToolkit_INCLUDE_DIRS (cuda_runtime.h)
+  - enable_language(CUDA) — needed because shim creates a new target with .cu
+    sources, and root project() only enabled C/CXX. Activates _CMAKE_CUDA_*
+    internal variables that the build needs.
+
+Build verification:
+  docker nvidia/cuda:12.8.0-devel-ubuntu24.04 + sm_61 +
+  -DLLAMA_DFLASH=ON -DLLAMA_BUILD_SERVER=ON  →  build_rc=0,
+  bin/llama-server = 65 MB, contains LlamaToDFlashTarget vtable +
+  --decode-engine CLI flag.
+
+Phase 0h milestone: compile + link integration DONE. Server request-side
+dispatch (replace llama_decode with run_dflash_spec_decode for trader
+route) remains as wire-up work — bridge is ready when that code is added.
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+---
+ ggml/src/ggml-cuda/ssm-conv.cu                |  5 ++++-
+ .../dflash/SAKATARD_INTEGRATION.cmake         | 21 ++++++++++++++++---
+ 2 files changed, 22 insertions(+), 4 deletions(-)
+
+diff --git a/ggml/src/ggml-cuda/ssm-conv.cu b/ggml/src/ggml-cuda/ssm-conv.cu
+index e6ce26f72..7b509f5ae 100644
+--- a/ggml/src/ggml-cuda/ssm-conv.cu
++++ b/ggml/src/ggml-cuda/ssm-conv.cu
+@@ -244,7 +244,10 @@ static void ssm_conv_f32_cuda(const float * src0, const float * src1, const int
+     }
+ }
+ 
+-void ggml_cuda_op_ssm_conv(ggml_backend_cuda_context & ctx, ggml_tensor * dst, ggml_tensor * silu_dst) {
++void ggml_cuda_op_ssm_conv(ggml_backend_cuda_context & ctx, ggml_tensor * dst, ggml_tensor * bias_add_node, ggml_tensor * silu_dst) {
++    // Sakatard fork keeps bias_add_node param for fusion paths in ggml-cuda.cu.
++    // Lucebox tree-mode impl ignores it (no bias fusion in tree path).
++    (void) bias_add_node;
+     const struct ggml_tensor * src0 = dst->src[0];  // conv_x
+     const struct ggml_tensor * src1 = dst->src[1];  // conv1d.weight
+     // dflash27b_ggml: optional src[2] = parent_ids (i32) enables tree mode
+diff --git a/vendor/lucebox-hub/dflash/SAKATARD_INTEGRATION.cmake b/vendor/lucebox-hub/dflash/SAKATARD_INTEGRATION.cmake
+index 0ff5e146a..9a7f5598b 100644
+--- a/vendor/lucebox-hub/dflash/SAKATARD_INTEGRATION.cmake
++++ b/vendor/lucebox-hub/dflash/SAKATARD_INTEGRATION.cmake
+@@ -32,14 +32,23 @@
+ set(DFLASH_ROOT "${CMAKE_CURRENT_LIST_DIR}")
+ set(DFLASH_SRC  "${DFLASH_ROOT}/src")
+ 
++# Enable CUDA language at this scope — needed because shim's add_library() includes
++# .cu sources, but the root project() declaration only enables C/CXX. ggml-cuda
++# pulls CUDA in for its own targets; we activate it explicitly here for ours.
++enable_language(CUDA)
++
+ message(STATUS "Phase 0g: building dflash27b_iface for sm_61 (Pascal scalar)")
+ 
+ # --- Source selection: minimal Pascal-viable subset --------------------------
+-# qwen35 target (our model family)
++# qwen35 target (our model family). Loader file is gguf_target_loader.cpp (not
++# qwen35_target_loader.cpp — naming was misleading); graph_builders + step_graph
++# are required by qwen35_target_graph.cpp via header inclusion.
+ set(DFLASH_QWEN35_SRC
+-    "${DFLASH_SRC}/qwen35/qwen35_target_loader.cpp"
++    "${DFLASH_SRC}/qwen35/gguf_target_loader.cpp"
++    "${DFLASH_SRC}/qwen35/graph_builders.cpp"
+     "${DFLASH_SRC}/qwen35/qwen35_target_graph.cpp"
+     "${DFLASH_SRC}/qwen35/qwen35_dflash_target.cpp"
++    "${DFLASH_SRC}/qwen35/qwen35_backend.cpp"
+ )
+ 
+ # Common runtime: ddtree verify, spec decode, gguf inspect, cache utils
+@@ -87,15 +96,21 @@ set_target_properties(dflash27b_iface PROPERTIES
+     CXX_STANDARD 17
+ )
+ 
+-# Includes: dflash's own src/, plus our ggml + llama headers (from parent project)
++# Includes: dflash's own src/ + include/, qwen35 + common subdirs (for step_graph.h
++# etc), CUDA toolkit (for cuda_runtime.h), plus our ggml + llama headers.
++find_package(CUDAToolkit REQUIRED)
+ target_include_directories(dflash27b_iface
+     PUBLIC
+         "${DFLASH_SRC}"
++        "${DFLASH_ROOT}/include"
+     PRIVATE
++        "${DFLASH_SRC}/qwen35"
++        "${DFLASH_SRC}/common"
+         "${CMAKE_SOURCE_DIR}/ggml/include"
+         "${CMAKE_SOURCE_DIR}/ggml/src"
+         "${CMAKE_SOURCE_DIR}/include"
+         "${CMAKE_SOURCE_DIR}/common"
++        "${CUDAToolkit_INCLUDE_DIRS}"
+ )
+ 
+ # Compile definitions: Pascal scalar path, no BSA, no Blackwell FP4
+-- 
+2.43.0
+

@@ -64,19 +64,12 @@ Hypothesis: `enable_language(CUDA)` in the shim's scope reset some flag (e.g. `C
 5. Then test `--decode-engine dflash` → expect ≥18 tok/s (no slowdown vs legacy since project_hidden stub falls through to AR)
 6. Real throughput gain from dflash requires v3: real `project_hidden_to_tokens` ggml graph + intermediate layer feature capture
 
-## Branch state (pushed)
+## Repo state
 
-Pushed to `Sakatard/llama-cpp-turboquant` `phase-0g-dflash` @ `5d7aae248` after `filter-repo --invert-paths` dropped all binary media globs across 9768 rewritten commits. Post-rewrite SHAs:
-
-```
-5d7aae248  phase0h v2: revert lucebox CUDA kernel wholesale-copy — fixes Pascal regression
-720ba87ce  phase0h v1: --decode-engine dflash dispatch + project_hidden stub
-539aa3813  phase0h v1: real llama_model_embed_input_tokens API + wire bridge
-17d5aff1a  phase0h: strip lucebox LFS pointer assets (now fully dropped, not just patched)
-6aa9fd487  phase0h: ssm_conv signature + shim sources/includes
-```
-
-10 commits ahead of `feature/mtp-turboquant-integration` after rewrite. LFS rejection resolved.
+Sakatard fork removed. All deltas now live in `patches/llama-cpp/` of this
+repo (10 patches: 0001 = TurboQuant+MTP base squash, 0002–0010 = Phase 0g/0h).
+Dockerfile clones upstream `ggml-org/llama.cpp` @ `253ba110b` + Luce-Org/lucebox-hub
+@ `6fe0d9a0a`, applies patch series, builds.
 
 ## Container deploy
 

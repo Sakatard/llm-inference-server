@@ -26,8 +26,11 @@ SETUP_TIMEOUT_S = 3600
 SMOKE_TIMEOUT_S = 3600
 IMAGE = "pytorch/pytorch:2.6.0-cuda12.4-cudnn9-devel"
 DISK_GB = 300
-LLAMA_CPP_REPO = "https://github.com/Sakatard/llama-cpp-turboquant.git"
-LLAMA_CPP_SHA = "c85252627d98583b2e6ba2fa3b28a20fa6198f6d"
+# Historical: Phase 0f was run against Sakatard/llama-cpp-turboquant fork @ c85252627.
+# Fork removed; for re-run, transfer ../patches/llama-cpp/ to /workspace and apply
+# 0001-turboquant-mtp-base.patch on top of upstream after clone+checkout.
+LLAMA_CPP_REPO = "https://github.com/ggml-org/llama.cpp.git"
+LLAMA_CPP_SHA = "253ba110bcd372207ca7b0bb56f1ea10d60d53fd"
 
 REPO_DIR = Path(__file__).parent
 SMOKE_SCRIPT = REPO_DIR / "phase0f_smoke.py"

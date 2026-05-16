@@ -11,20 +11,43 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Ivy Bridge ISA flags (no AVX2, no FMA, no BMI1/BMI2, no AVX512)
 ENV IVY_CFLAGS="-march=x86-64 -msse4.2 -mavx -mno-avx2 -mno-fma -mno-avx512f -mno-bmi -mno-bmi2"
 
-# --- Build llama.cpp (TurboQuant fork + MTP merge — adds turbo4 KV cache type
-#     and llama.cpp PR #22673 self-speculative MTP support) ---
-# Integration branch lives in Sakatard/llama-cpp-turboquant @ pinned SHA.
-# Bump the SHA below to advance the merged tree.
-ARG LLAMA_FORK_URL=https://github.com/Sakatard/llama-cpp-turboquant.git
-ARG LLAMA_FORK_SHA=c85252627d98583b2e6ba2fa3b28a20fa6198f6d
+# --- Build llama.cpp (upstream + local patch series) ---
+# Strategy: clone upstream ggml-org/llama.cpp at the merge-base SHA, then apply
+# the patch series in patches/llama-cpp/. Patch 0001 is the squashed
+# TurboQuant + MTP PR #22673 base (~26k LoC); 0002–0010 are Phase 0g/0h
+# (dflash compile/link + bridge + Pascal CUDA fix). Lucebox-hub vendor tree
+# is fetched separately at its pinned SHA — Phase 0g/0h patches reference
+# vendor/lucebox-hub/dflash/* paths so the clone must happen before 0002+.
+ARG LLAMA_UPSTREAM_URL=https://github.com/ggml-org/llama.cpp.git
+ARG LLAMA_UPSTREAM_SHA=253ba110bcd372207ca7b0bb56f1ea10d60d53fd
+ARG LUCEBOX_URL=https://github.com/Luce-Org/lucebox-hub.git
+ARG LUCEBOX_SHA=6fe0d9a0a
 WORKDIR /build/llama.cpp
 RUN git init -q . && \
-    git remote add origin "$LLAMA_FORK_URL" && \
-    git -c protocol.version=2 fetch --depth 1 origin "$LLAMA_FORK_SHA" && \
+    git remote add origin "$LLAMA_UPSTREAM_URL" && \
+    git -c protocol.version=2 fetch --depth 1 origin "$LLAMA_UPSTREAM_SHA" && \
     git checkout -q FETCH_HEAD && \
-    test "$(git rev-parse HEAD)" = "$LLAMA_FORK_SHA"
+    test "$(git rev-parse HEAD)" = "$LLAMA_UPSTREAM_SHA"
 
-# Build for P40
+COPY patches/llama-cpp/ /build/patches/llama-cpp/
+RUN git apply --whitespace=nowarn /build/patches/llama-cpp/0001-turboquant-mtp-base.patch
+RUN git clone "$LUCEBOX_URL" vendor/lucebox-hub && \
+    git -C vendor/lucebox-hub checkout -q "$LUCEBOX_SHA" && \
+    rm -rf vendor/lucebox-hub/.git
+RUN for p in /build/patches/llama-cpp/0002-*.patch \
+              /build/patches/llama-cpp/0003-*.patch \
+              /build/patches/llama-cpp/0004-*.patch \
+              /build/patches/llama-cpp/0005-*.patch \
+              /build/patches/llama-cpp/0006-*.patch \
+              /build/patches/llama-cpp/0007-*.patch \
+              /build/patches/llama-cpp/0008-*.patch \
+              /build/patches/llama-cpp/0009-*.patch \
+              /build/patches/llama-cpp/0010-*.patch; do \
+      echo "applying $(basename $p)"; \
+      git apply --whitespace=nowarn "$p"; \
+    done
+
+# Build for P40 (dflash decode engine enabled — see Phase 0h v2)
 RUN cmake -B build \
     -DGGML_CUDA=ON \
     -DCMAKE_CUDA_ARCHITECTURES="61" \
@@ -32,6 +55,7 @@ RUN cmake -B build \
     -DLLAMA_SERVER=ON \
     -DLLAMA_FFMPEG=ON \
     -DLLAMA_BUILD_SERVER=ON \
+    -DLLAMA_DFLASH=ON \
     -DBUILD_SHARED_LIBS=OFF \
     -DCMAKE_CUDA_FLAGS="-Wno-deprecated-gpu-targets"
 

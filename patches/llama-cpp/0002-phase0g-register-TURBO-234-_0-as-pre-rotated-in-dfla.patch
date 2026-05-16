@@ -1,0 +1,45 @@
+From c413281a33fccb54e8690bdfc144d2159a595181 Mon Sep 17 00:00:00 2001
+From: build <build@local>
+Date: Sat, 16 May 2026 13:08:40 +0800
+Subject: [PATCH 02/10] phase0g: register TURBO[234]_0 as pre-rotated in dflash
+ qwen35 graph
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Sakatard fork's TURBO2_0/TURBO3_0/TURBO4_0 KV cache types use WHT+PolarQuant
+(pre-rotated K). dflash's qwen35_target_graph.cpp:130 only checked TQ3_0; without
+this patch dflash would double-rotate K when our turbo* cache is active,
+producing garbage at inference.
+
+Phase 0c proved P40 baseline (MTP+turbo4, no dflash) hits 18.48 tok/s — below
+40 tok/s kill threshold per SPEC v4 — so dflash integration justified.
+
+Vendored lucebox-hub @ SHA 6fe0d9a0 via subtree at vendor/lucebox-hub/.
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+---
+ .../lucebox-hub/dflash/src/qwen35/qwen35_target_graph.cpp  | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/vendor/lucebox-hub/dflash/src/qwen35/qwen35_target_graph.cpp b/vendor/lucebox-hub/dflash/src/qwen35/qwen35_target_graph.cpp
+index 9619066a7..d608deec0 100644
+--- a/vendor/lucebox-hub/dflash/src/qwen35/qwen35_target_graph.cpp
++++ b/vendor/lucebox-hub/dflash/src/qwen35/qwen35_target_graph.cpp
+@@ -127,7 +127,12 @@ bool create_target_cache_partial(const TargetWeights & w,
+     // Graph-level FWHT K-rotation (TurboQuant-style outlier spreading with
+     // standard quant types that keep fast FA kernel paths on all arches).
+     // Skip for TQ3_0 K cache — that type already applies WHT during quantization.
+-    out.kv_k_rotated = (kv_k_type != GGML_TYPE_TQ3_0);
++    // Sakatard fork: TURBO2_0/TURBO3_0/TURBO4_0 also pre-rotate via WHT + PolarQuant,
++    // so we must NOT double-rotate when those cache types are active.
++    out.kv_k_rotated = (kv_k_type != GGML_TYPE_TQ3_0
++                     && kv_k_type != GGML_TYPE_TURBO2_0
++                     && kv_k_type != GGML_TYPE_TURBO3_0
++                     && kv_k_type != GGML_TYPE_TURBO4_0);
+ 
+     const bool needs_256_stride =
+         kv_k_type == GGML_TYPE_TQ3_0 || kv_v_type == GGML_TYPE_TQ3_0;
+-- 
+2.43.0
+
