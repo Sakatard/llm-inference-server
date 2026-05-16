@@ -1,67 +1,88 @@
 # LLM Inference Server
 
-Unified GPU inference server running a routed **Qwen 3.6 27B** chat/coding model, selectable **qwen-planner** chat routing, **Qwen 3.5 0.8B** for multimodal transcription and vision-audio input, **Whisper** for audio transcription, and **TimesFM 2.5** for general-purpose numeric time-series forecasting on a single Tesla P40.
+A single-container, idle-aware, OpenAI-compatible inference router for a
+Tesla P40. Routes between **Qwen 3.6 27B** (MTP self-speculative decoding,
+TurboQuant turbo4 KV cache), **Qwen 3.5 0.8B** (multimodal transcription),
+**Whisper large-v3-turbo** (audio → text), and **TimesFM 2.5**
+(numeric time-series forecasting).
 
-One container. One port. Multiple model routes. Each model loads only when you need it and unloads itself after a period of inactivity, so the GPU drops back toward idle power when nothing is happening. In the included `docker-compose.yaml`, that timeout is currently set to 20 minutes (`IDLE_TIMEOUT=1200`), which overrides the `server.py` application default of 5 minutes (`300` seconds). The longer compose timeout helps avoid repeated unload/reload churn for bigger chat and coding workloads.
+One Python process owns lifecycle for all of them. Each model spins up only
+when the relevant route is hit, and spins down again after a configurable
+idle window so the GPU drops to P8 between bursts.
+
+The repo also contains an end-to-end fine-tuning pipeline (`finetune/`) for
+producing a `qwen-trader` model from Polymarket data — the inference server
+is the deployment target for that pipeline.
 
 ---
 
 ## What is this?
 
-If you've landed here and aren't sure what this project does, here's the short version:
+Two interleaved projects sharing the same repo:
 
-This runs several AI models on your machine in a single Docker container, accessible over a simple HTTP API. You send a request, the server wakes the right model, does the work, and sends the result back. No cloud. No API keys. No per-request fees.
+1. **Inference server** (`server.py`, `Dockerfile`, `docker-compose.yaml`).
+   Production HTTP API on `:8088` routing OpenAI-shaped requests to the
+   right local model. Idle-aware, no API keys, no per-request fees.
+2. **Fine-tuning pipeline** (`finetune/`). Builds and trains a domain-tuned
+   Qwen 3.6 27B for prediction-market forecasting. Reuses the inference
+   server as the deployment substrate when training finishes.
 
-**What the models do:**
+The two are usable independently — you can run the inference server without
+touching `finetune/` at all.
 
-| Model | What it's for |
-|-------|--------------|
-| Qwen 3.6 27B | Default general chat and coding assistant model |
-| qwen-planner (Qwen 3 1.7B) | Lightweight planner model selectable via chat `model` |
-| Qwen 3.5 0.8B | Lightweight multimodal transcription / vision-audio route |
-| Whisper large-v3-turbo | Transcribes audio files to text |
-| TimesFM 2.5 | General-purpose numeric time-series forecasting |
+| Model | Route | Notes |
+|-------|-------|-------|
+| Qwen 3.6 27B | `/v1/chat/completions` (default) | MTP self-speculative + turbo4 KV; ~20 tok/s decode on P40 |
+| Qwen 3.5 0.8B + mmproj | `/v1/transcribe` | Multimodal vision/audio transcription |
+| Whisper large-v3-turbo | `/v1/audio/transcriptions` | C++ inference via whisper.cpp |
+| TimesFM 2.5 | `/v1/forecast` | PyTorch, cold-starts slower than warm path |
 
-**What you need to run it:**
+### Requirements
 
-- Docker and Docker Compose installed
-- An NVIDIA GPU with at least 20 GB of VRAM (tested on Tesla P40, 24 GB)
-- The NVIDIA Container Toolkit (`nvidia-docker2`) so Docker can access your GPU
-- The model files listed below
+- Docker + Docker Compose with NVIDIA Container Toolkit
+- NVIDIA GPU with ≥20 GB VRAM (designed for Tesla P40, sm_61, 24 GB)
+- ~30 GB disk for the model files listed below
+- ~50 GB build cache space (llama.cpp + whisper.cpp compile from source)
 
 ---
 
 ## Getting the Models
 
-Model files are **not included** in this repo. Put them in the `models/` folder next to your `docker-compose.yaml`.
-
-Create the folder if it doesn't exist:
+Model files are **not included**. Drop them into `./models/` alongside
+`docker-compose.yaml`:
 
 ```bash
 mkdir -p models
 ```
 
-Place these files in `models/`:
+Required files:
 
-- `Qwen3.6-27B-Q4_K_M.gguf` — default chat and coding model
-- `Qwen3-1.7B-Q4_K_M.gguf` — planner model used when chat requests set `model` to `qwen-planner`
-- `Qwen3.5-0.8B-Q5_K_M.gguf` — multimodal transcription / vision-audio route
-- `mmproj-F32.gguf` — vision projector for the multimodal Qwen route
-- `ggml-large-v3-turbo-q8_0.bin` — Whisper model
+| File | Used by |
+|------|---------|
+| `Qwen3.6-27B-IQ4_XS.gguf` *(MTP build, default)* OR `Qwen3.6-27B-Q4_K_M.gguf` *(non-MTP)* | qwen route |
+| `Qwen3.5-0.8B-Q5_K_M.gguf` | qwen-transcribe route |
+| `mmproj-F32.gguf` | vision projector for qwen-transcribe |
+| `ggml-large-v3-turbo-q8_0.bin` | whisper route |
 
-You can download the Qwen GGUF files from Hugging Face's Qwen releases and the Whisper file from `ggerganov/whisper.cpp`.
+Default model selection follows `ENABLE_MTP`:
 
-**TimesFM** is downloaded automatically on first use into Hugging Face's cache at `/models/huggingface` inside the container. Because `docker-compose.yaml` mounts `./models:/models` and `Dockerfile.combined` sets `HF_HOME=/models/huggingface`, those downloaded files persist on the host under `./models/huggingface/`.
+- `ENABLE_MTP=1` (recommended) → loads `Qwen3.6-27B-IQ4_XS.gguf` with
+  `--spec-type draft-mtp` for self-speculative decoding (~10% throughput win)
+- `ENABLE_MTP=0` (legacy) → loads `Qwen3.6-27B-Q4_K_M.gguf` with plain
+  autoregressive decode
 
-Your `models/` folder should look like this when ready:
+TimesFM is auto-downloaded on first use to `./models/huggingface/` (via the
+container's `HF_HOME=/models/huggingface` setting + the `./models:/models`
+bind mount).
 
 ```text
 models/
-├── Qwen3.6-27B-Q4_K_M.gguf
-├── Qwen3-1.7B-Q4_K_M.gguf
+├── Qwen3.6-27B-IQ4_XS.gguf       # MTP build (default path)
+├── Qwen3.6-27B-Q4_K_M.gguf       # non-MTP fallback (optional)
 ├── Qwen3.5-0.8B-Q5_K_M.gguf
 ├── mmproj-F32.gguf
-└── ggml-large-v3-turbo-q8_0.bin
+├── ggml-large-v3-turbo-q8_0.bin
+└── huggingface/                  # auto-populated for TimesFM
 ```
 
 ---
@@ -69,88 +90,81 @@ models/
 ## Quick Start
 
 ```bash
-# Build (first time takes ~15–20 min — compiles llama.cpp and whisper.cpp from source)
-docker compose build
-
-# Start in the background
+docker compose build           # first build ~15-25 min (compiles llama.cpp + applies patch series)
 docker compose up -d
-
-# Confirm it's running (models show false until first request — that's normal)
 curl http://localhost:8088/health
 ```
+
+To advance the llama.cpp tree, bump `LLAMA_UPSTREAM_SHA` (and re-apply or
+regenerate patches if conflicts surface) in `Dockerfile` / `Dockerfile.combined`.
+
+---
+
+## Build Architecture
+
+The Dockerfile pulls upstream `ggml-org/llama.cpp` at a pinned SHA, then
+applies the patch series in `patches/llama-cpp/` to layer in the features
+that aren't (yet) in mainline:
+
+| Patch | Adds |
+|-------|------|
+| `0001-turboquant-mtp-base.patch` | TurboQuant turbo3/turbo4 KV cache + MTP self-speculative (PR #22673), ~26k LoC squashed |
+| `0002-phase0g-register-TURBO*` | Pre-rotated turbo type registration in the dflash qwen35 target graph |
+| `0003-phase0g-port-lucebox*` | Tree-op ggml extensions (`ggml_ssm_conv_tree`, `ggml_gated_delta_net_tree`) + lucebox integration shim |
+| `0004-phase0g-add-LLAMA_DFLASH*` | `LLAMA_DFLASH=ON` build option + `--decode-engine` CLI flag |
+| `0005..0010-phase0h-*` | `LlamaToDFlashTarget` bridge, server CMake hook, `llama_model_embed_input_tokens` public API, Pascal sm_61 CUDA fixes |
+
+Between `0001` and `0002`, the build clones
+[`Luce-Org/lucebox-hub`](https://github.com/Luce-Org/lucebox-hub) at
+`6fe0d9a0` into `vendor/lucebox-hub/`. Lucebox supplies the dFlash CUDA
+kernels (FWHT + ternary draft, DDTree verify); the Phase 0g/0h patches
+glue them into llama.cpp without modifying lucebox itself.
+
+There is **no separate llama.cpp fork** — all deltas live in this repo as
+patches. Bumping upstream means rebasing `patches/llama-cpp/0001*` against
+the new mainline.
 
 ---
 
 ## Configuration
 
-Right now, the included `docker-compose.yaml` does **not** load a `.env` file. It passes only one setting directly to the container:
+`docker-compose.yaml` passes one knob today:
 
-- `IDLE_TIMEOUT=1200`
+- `IDLE_TIMEOUT=1200` (20 min before idle models unload)
 
-Important distinction:
-- `server.py` application default: `IDLE_TIMEOUT=300` seconds (5 minutes) if no environment variable is provided
-- Current `docker-compose.yaml` override: `IDLE_TIMEOUT=1200` seconds (20 minutes)
+`server.py` exposes more via env. The most consequential ones:
 
-So with the provided compose file, models stay loaded for **20 minutes / 1200 seconds** after their last request before unloading. This keeps the large chat/coding model warm longer so repeated coding sessions do not keep paying cold-start cost.
+| Env | Default | Effect |
+|-----|---------|--------|
+| `IDLE_TIMEOUT` | `300` (compose: `1200`) | Seconds of inactivity before a model unloads |
+| `START_TIMEOUT` | `120` | Seconds to wait for a model's HTTP probe after spawn |
+| `PORT` | `8080` | In-container port (change the `8088:8080` mapping for host) |
+| `ENABLE_MTP` | `0` | When `1`, qwen route uses Qwen3.6 IQ4_XS + MTP draft (self-spec) |
+| `MTP_MODEL_PATH` | `/models/Qwen3.6-27B-IQ4_XS.gguf` | MTP-converted GGUF |
+| `MTP_DRAFT_N_MAX` | `3` | Max drafted tokens per step (1-16) |
+| `MTP_DRAFT_P_MIN` | `0.0` | Acceptance probability floor for drafts |
+| `MTP_CACHE_TYPE` | `turbo4` | KV cache quant (`turbo4` / `q8_0` / `f16`) |
+| `MTP_CTX` | `65536` (turbo4) / `32768` (other) | Context window — auto-shrinks for unquantised caches |
+| `DECODE_ENGINE` | `dflash` | `legacy` (standard llama_decode) or `dflash` (Phase 0h dispatch — currently logs + falls through; full wiring is Phase 0h v3) |
 
-If you want to change that timeout, edit `docker-compose.yaml` directly:
-
-```yaml
-environment:
-  - IDLE_TIMEOUT=1200
-```
-
-For example, to keep models loaded for 10 minutes instead of 20, change it to:
-
-```yaml
-environment:
-  - IDLE_TIMEOUT=600
-```
-
-Then recreate the container so Docker uses the updated setting:
-
-```bash
-docker compose up -d --force-recreate
-```
-
-`server.py` also supports `START_TIMEOUT`, but the current `docker-compose.yaml` does not pass it through. If you want to use it, add it under `environment:` in `docker-compose.yaml` yourself.
+To change anything, either set under `environment:` in
+`docker-compose.yaml` or pass at `docker compose run` time, then
+`docker compose up -d --force-recreate`.
 
 ---
 
-## Example Files
+## Performance
 
-### docker-compose.yaml
+Bench on Tesla P40 (24 GB), Qwen 3.6 27B-IQ4_XS, 4075-token prompt + 256
+decoded:
 
-```yaml
-services:
-  llm-inference-server:
-    build:
-      context: .
-      dockerfile: Dockerfile.combined
-    image: llm-inference-server
-    container_name: llm-inference-server
-    ports:
-      - "8088:8080"      # Host port 8088 maps to container port 8080
-    volumes:
-      - ./models:/models  # Your models folder is mounted here
-    environment:
-      - IDLE_TIMEOUT=1200
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    restart: unless-stopped
-```
+| Build | Decode tok/s | vs baseline |
+|-------|--------------|-------------|
+| Phase 0c baseline (no MTP, Q4_K_M, turbo4) | 18.48 | 1.00× |
+| Phase 0h v2 (MTP draft-n=3, p_min=0.0, turbo4, `--decode-engine dflash` stub) | **20.03** | **+8.4%** |
 
-### Dockerfile.combined (summary)
-
-The build has two stages:
-
-1. **Builder** — compiles `llama-server` (with TurboQuant KV cache support) and `whisper-server` from source, optimised for your CPU (Ivy Bridge flags — no AVX2/FMA)
-2. **Final image** — copies the compiled binaries in, installs PyTorch 2.4.1, installs TimesFM, copies `server.py`
+Phase 0h v3 (real dflash spec-decode dispatch + tree-mode kernels) targets
+≥28 tok/s; tracked as a future task.
 
 ---
 
@@ -159,159 +173,234 @@ The build has two stages:
 ```text
   You → :8088 (host) → :8080 (container)
                            │
-                      server.py
-                    (pure Python router)
-                     /    |     |    \
-                    /     |     |     \
-                qwen   whisper timesfm qwen-transcribe
-                  |
-           qwen-planner selectable
-           via chat model routing
+                       server.py
+                  (pure-Python router, no GPU libs)
+                  /     |       |        \
+              qwen   transcribe whisper  timesfm
+                │
+        MTP draft-target self-spec
+        (llama.cpp PR #22673 inside
+         the patched fork build)
 ```
 
-`server.py` is the only process that stays running all the time. It listens for requests and launches the right model as a subprocess when needed. In code, the application default is `IDLE_TIMEOUT=300` seconds unless the environment overrides it. In the provided compose setup, Docker injects `IDLE_TIMEOUT=1200`, so a model is shut down after 20 minutes of inactivity and VRAM is freed.
+`server.py` imports no GPU libraries, so the GPU stays at P8 idle when no
+model is loaded. Each model is spawned as a subprocess on its own port and
+proxied. After `IDLE_TIMEOUT` seconds without a request, it's terminated
+and VRAM is freed.
 
-Chat requests are routed by the `model` field:
+Chat routing on `/v1/chat/completions` is by request `model` field:
 
-- `"qwen"` or omitted `model` → default Qwen 3.6 27B chat/coding route
-- `"qwen-planner"` → lightweight planner chat route
-
-Because `server.py` itself imports no GPU libraries, the GPU sits at P8 state when all models are idle.
+- `qwen` or omitted → Qwen 3.6 27B
+- `qwen-transcribe` → multimodal Qwen 3.5 0.8B
 
 ---
 
 ## API Endpoints
 
-All endpoints are on `http://localhost:8088`.
+All on `http://localhost:8088`.
 
-| Method | Path | Model | Description |
-|--------|------|-------|-------------|
-| `POST` | `/v1/chat/completions` | `qwen` by default, `qwen-planner` selectable | OpenAI-compatible chat |
-| `POST` | `/v1/transcribe` | Qwen 3.5 0.8B | Multimodal transcription |
-| `POST` | `/v1/audio/transcriptions` | Whisper | Audio-to-text; request is routed to the local Whisper service |
-| `POST` | `/v1/forecast` | TimesFM | Numeric time-series forecasting |
-| `GET`  | `/v1/models` | — | Lists available routed model IDs (`whisper` is the advertised Whisper ID) |
-| `GET`  | `/health` | — | Shows which model routes are currently loaded |
+| Method | Path | Backing | Notes |
+|--------|------|---------|-------|
+| `POST` | `/v1/chat/completions` | qwen / qwen-transcribe | OpenAI-shaped |
+| `POST` | `/v1/transcribe` | qwen-transcribe | Multimodal (rewrites internally to chat-completions) |
+| `POST` | `/v1/audio/transcriptions` | whisper | Whisper file upload |
+| `POST` | `/v1/forecast` | timesfm | Numeric time-series JSON |
+| `GET`  | `/v1/models` | — | Lists routed IDs |
+| `GET`  | `/health` | — | Active model status |
 
-See [API.md](API.md) for the full request and response details.
+Full schemas in [`API.md`](API.md).
 
 ### Quick examples
 
-**Default chat (`qwen`):**
 ```bash
+# Default chat (MTP self-spec when ENABLE_MTP=1)
 curl -X POST http://localhost:8088/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{
-    "model": "qwen",
-    "messages": [{"role": "user", "content": "Explain quantum entanglement simply."}],
-    "max_tokens": 500
-  }'
-```
+  -d '{"model":"qwen","messages":[{"role":"user","content":"Explain quantum entanglement simply."}],"max_tokens":500}'
 
-**Planner chat (`qwen-planner`):**
-```bash
-curl -X POST http://localhost:8088/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "qwen-planner",
-    "messages": [{"role": "user", "content": "Give me a short step-by-step plan to migrate an API client."}],
-    "max_tokens": 500
-  }'
-```
-
-**Transcribe audio:**
-```bash
+# Whisper transcription
 curl -X POST http://localhost:8088/v1/audio/transcriptions \
-  -F "file=@recording.wav" \
-  -F "model=whisper"
-```
+  -F "file=@recording.wav" -F "model=whisper"
 
-For this endpoint, the proxy routes requests to the local Whisper service. `/v1/models` advertises the local model ID as `whisper`, and that is the safest value to send. The submitted `model` form field is not used to pick between multiple Whisper backends here.
-
-**Forecast a numeric time series:**
-```bash
+# TimesFM forecast
 curl -X POST http://localhost:8088/v1/forecast \
   -H "Content-Type: application/json" \
-  -d '{
-    "time_series": [[100, 102, 101, 105, 107, 109]],
-    "horizon": 3
-  }'
+  -d '{"time_series":[[100,102,101,105,107,109]],"horizon":3}'
 ```
 
-`time_series` is a list of one or more numeric series. The example above sends one series, but you can batch multiple series in the same request by adding more inner arrays.
-
-**List available model IDs:**
-```bash
-curl http://localhost:8088/v1/models
-```
-
-**Python (OpenAI SDK):**
 ```python
+# Python (OpenAI SDK)
 from openai import OpenAI
-
 client = OpenAI(base_url="http://localhost:8088/v1", api_key="dummy")
-
-response = client.chat.completions.create(
+resp = client.chat.completions.create(
     model="qwen",
     messages=[{"role": "user", "content": "Hello!"}],
     max_tokens=500,
 )
-print(response.choices[0].message.content)
+print(resp.choices[0].message.content)
 ```
 
-> **Note on `max_tokens`:** The default `qwen` chat route enables reasoning, so it may think silently before answering. `qwen-planner` is still a chat route, but this README should not assume it uses the same reasoning mode by default. For the default `qwen` route, set `max_tokens` to at least 300–500 or the model may run out of budget and return an incomplete response.
+> **`max_tokens` note:** the qwen route enables reasoning by default (silent
+> CoT before the visible answer). Allow ≥ 300 tokens or the model may run
+> out of budget mid-response.
 
-> **Operational note:** TimesFM cold starts can be noticeably slower than a warm request. If you're building a downstream app, a simple cache-first/background-refresh pattern can keep forecast paths responsive.
+---
+
+## Fine-tuning Pipeline (`finetune/`)
+
+A multi-phase pipeline for producing a domain-tuned `qwen-trader` model
+that predicts Polymarket binary outcomes. Phases (per `finetune/SPEC.md`):
+
+| Phase | Status | What |
+|-------|--------|------|
+| 0  | ✅ done | Pascal deployment + training-loader benchmark |
+| 0c | ✅ done | P40 throughput baseline (18.48 tok/s) |
+| 0f | ✅ done | Trained MTP head on Qwen 3.6 27B (LM + α·MTP loss, QLoRA on Vast 4090) |
+| 0g | ✅ done | Foundational dFlash compile/link infra (patches 0002-0004) |
+| 0h v1/v2 | ✅ done | `LlamaToDFlashTarget` bridge + Pascal CUDA fix; 20.03 tok/s |
+| 0h v3 | ⏳ pending | Real dispatch + tree-mode CUDA kernels + feature capture (≥28 tok/s target) |
+| 1  | ✅ done | Baseline-without-FT eval (FT-may-not-be-needed gate) |
+| 2  | ✅ done | Frozen teacher-runner contract (`finetune/teacher_runner/`) |
+| 3  | ✅ done | Data archival reconstruction (`finetune/data_archival/`) |
+| 4  | ⏳ in progress | Smoke train 200 examples on Vast.ai |
+| 5–7 | ⏳ pending | Learning curve, α-ablation, deploy as qwen-trader |
+
+### Pipeline overview
+
+```text
+  Gamma API (resolved markets)
+        │
+        ▼
+  build_bundles.py ─────► bundles.jsonl
+        │ (resolves news, parses rules, attaches connector summary)
+        ▼
+  label_bundles.py ─────► labels.jsonl
+        │ (runs polymarket-agents committee — yes_thesis + no_thesis +
+        │  gpt-5.5 referee — via teacher_runner frozen contract)
+        ▼
+  format_jsonl.py ──────► train.jsonl + holdout.jsonl
+        │ (system / user / assistant chat-template)
+        ▼
+  vast_run_phase*.py ──► Qwen 3.6 27B QLoRA on Vast.ai 4090
+        │ (rank 8, alpha 16, dropout 0.1, seq 4k, 3 epochs)
+        ▼
+  merge + quantize ────► qwen-trader.gguf
+        │
+        ▼
+  models/Qwen3.6-27B-Trader-IQ4_XS.gguf — drop in beside the default
+```
+
+### Key modules
+
+- **`finetune/teacher_runner/`** — frozen Pydantic contract
+  (`TeacherContextBundle` → `TeacherLabel`) wrapping
+  [polymarket-agents](https://github.com/Sakatard/polymarket-agents)
+  committee inference. SHA-pinned via `PINNED_SHA.txt`.
+- **`finetune/data_archival/check_reconstruction.py`** — Phase 3 quality
+  gate (sampled 20 closed Polymarket markets across 0-180d, scored trade
+  history + news-window reconstructibility).
+- **`finetune/build_bundles.py`** — Phase 4 step 1 dataset builder
+  (gnews-backed news window, polymarket-agents `parse_market_rules`).
+- **`finetune/label_bundles.py`** — Phase 4 step 2 label runner. Resumable.
+- **`finetune/format_jsonl.py`** — Phase 4 step 3 chat-template JSONL
+  emitter with 50-market holdout split.
+- **`finetune/qwen35_mtp_modeling.py`** — Phase 0f PyTorch `nn.Module`
+  MTP head reimplementation (transformers strips MTP at load; this restores
+  it with LM + α·MTP_CE supervision).
+- **`finetune/vast_run_phase0[bef].py`** — Vast.ai orchestrators
+  (spec file, SSH-ready wait, dataset push, train, model pull).
+
+### Phase 2/3 invariants
+
+- The committee in polymarket-agents is bind-mounted into the
+  `polymarket-trader` container at `/app/agents`. The teacher-runner
+  resolves the bind-mounted SHA on host before each call so any drift
+  from `PINNED_SHA.txt` fails loudly instead of silently mislabeling.
+- The referee model is `gpt-5.5`, reached via the local
+  [`claude-proxy`](../claude-proxy) `/v1/chat/completions` shim (OpenAI
+  SDK calls translate to Anthropic Messages internally, route to ChatGPT
+  Plus Codex Responses, return as OpenAI ChatCompletions). yes/no theses
+  use OpenRouter `deepseek-v3.2` directly.
+- Phase 3's 70% full-reconstruction gate failed empirically (40% across
+  20 substantive closed markets), so Phase 4 takes the SPEC-defined
+  partial-context contingency: filter to `news_count ≥ 5` markets only.
 
 ---
 
 ## GPU Behavior
 
-This project is designed to keep a single GPU useful without leaving every model loaded all the time.
-
-- The Python router stays up continuously.
-- Each model route loads on first use.
-- Each route unloads independently after the configured idle timeout.
-- App default: 5 minutes (`300` seconds) in `server.py`.
-- Current compose override: 20 minutes (`1200` seconds).
-- The big Qwen 3.6 chat/coding route is the heaviest path, which is why the longer timeout is helpful for repeated development work.
+- `server.py` (Python, no CUDA libs) stays up continuously.
+- Each model route loads on first use, gets its own UNIX subprocess + port.
+- Each route unloads independently after `IDLE_TIMEOUT`.
+- Provided compose timeout (20 min) is tuned for repeated coding sessions
+  where the 17 GB qwen 27B model has a high reload cost. Drop it back to
+  `300` if you'd rather optimise for VRAM availability between bursts.
 
 ---
 
 ## Hardware Target
 
-This project is optimised for:
+| Component | Spec |
+|-----------|------|
+| GPU | Tesla P40 (24 GB, CUDA compute 6.1, no FA2, no tensor cores) |
+| CPU | Xeon E5-2660 v2 (Ivy Bridge — no AVX2/FMA/BMI2) |
+| CUDA Driver | 13.0+ (toolkit 12.8 in the image) |
+| PyTorch | 2.4.1 (last release with Pascal sm_61 support) |
 
-- **GPU**: Tesla P40 (24 GB, CUDA compute 6.1)
-- **CPU**: Xeon E5-2660 v2 (Ivy Bridge — no AVX2/FMA/BMI2)
-- **CUDA Driver**: 13.0+
-- **PyTorch**: 2.4.1 (last version with Pascal / sm_61 support)
-
-If you're on a different GPU, update `CMAKE_CUDA_ARCHITECTURES` in `Dockerfile.combined`. For a different CPU, update the `IVY_CFLAGS` env variable accordingly.
+If you're on a newer GPU, bump `CMAKE_CUDA_ARCHITECTURES` in
+`Dockerfile.combined`. For a CPU with AVX2/FMA, drop the `IVY_CFLAGS`
+gating (or keep them — they cost negligible perf on newer cores).
 
 ---
 
-## Configuration Reference
+## Project Layout
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | `8080` | Internal container port (change the host-side mapping in docker-compose instead) |
-| `IDLE_TIMEOUT` | `300` app default; `1200` in current compose file | Seconds of inactivity before a model is unloaded |
-| `START_TIMEOUT` | `120` | Seconds to wait for a model to become healthy on startup |
+```text
+.
+├── server.py                       # router process (always-on)
+├── timesfm_worker.py               # TimesFM subprocess entry
+├── docker-compose.yaml             # production wiring (qwen IQ4_XS + MTP)
+├── docker-compose.mtp.yaml         # MTP-only variant
+├── Dockerfile                      # primary image
+├── Dockerfile.combined             # qwen + whisper + timesfm in one build
+├── Dockerfile.timesfm              # TimesFM-only image
+├── patches/llama-cpp/              # 10-patch series (TurboQuant + MTP + Phase 0g/0h)
+├── finetune/                       # training pipeline (see Fine-tuning Pipeline above)
+│   ├── SPEC.md
+│   ├── teacher_runner/             # Phase 2 frozen contract
+│   ├── data_archival/              # Phase 3 reconstruction gate
+│   ├── build_bundles.py            # Phase 4 step 1
+│   ├── label_bundles.py            # Phase 4 step 2
+│   ├── format_jsonl.py             # Phase 4 step 3
+│   ├── qwen35_mtp_modeling.py      # Phase 0f MTP head reimplementation
+│   ├── vast_run_phase0*.py         # Vast.ai orchestrators
+│   └── REVIEWS/                    # phase status docs, bench results, cross-model reviews
+├── artifacts/                      # deployable binaries + status docs
+│   ├── llama-server-phase0h-v2
+│   └── README-phase0h-v2.md
+├── examples/                       # ready-to-run client scripts
+└── API.md                          # endpoint reference
+```
 
 ---
 
 ## Credits
 
-- **[llama.cpp (TurboQuant fork)](https://github.com/TheTom/llama-cpp-turboquant)** — C++ LLM inference with turbo4 KV cache quantisation
-- **[whisper.cpp](https://github.com/ggerganov/whisper.cpp)** — C++ inference for Whisper audio transcription
+- **[llama.cpp](https://github.com/ggml-org/llama.cpp)** — upstream C++ LLM inference
+- **[TheTom/llama-cpp-turboquant](https://github.com/TheTom/llama-cpp-turboquant)** — turbo3/turbo4 KV cache quantisation (squashed into patch 0001)
+- **[llama.cpp PR #22673](https://github.com/ggml-org/llama.cpp/pull/22673)** — MTP self-speculative decoding (squashed into patch 0001)
+- **[Luce-Org/lucebox-hub](https://github.com/Luce-Org/lucebox-hub)** — dFlash speculative decode + DDTree verify (vendored at SHA `6fe0d9a0`)
+- **[whisper.cpp](https://github.com/ggerganov/whisper.cpp)** — Whisper inference
 - **[TimesFM](https://github.com/google-research/timesfm)** — Google Research time-series foundation model
 - **[Qwen](https://huggingface.co/Qwen)** — Alibaba's language and multimodal models
-- **[OpenAI Whisper](https://github.com/openai/whisper)** — Original Whisper model weights
-- **[PyTorch](https://pytorch.org/)** — ML framework powering TimesFM (v2.4.1 for Pascal GPU)
+- **[OpenAI Whisper](https://github.com/openai/whisper)** — Whisper model weights
+- **[PyTorch](https://pytorch.org/)** — ML framework (v2.4.1 for Pascal compatibility)
+- **[Unsloth](https://github.com/unslothai/unsloth)** — QLoRA training stack (Phase 0f)
+- **[polymarket-agents](https://github.com/Sakatard/polymarket-agents)** — committee inference (teacher labels in Phase 4)
 
 ---
 
 ## Examples
 
-See the [`examples/`](examples/) directory for ready-to-run Python and shell scripts.
+See [`examples/`](examples/) for ready-to-run Python and shell scripts
+hitting each route.
