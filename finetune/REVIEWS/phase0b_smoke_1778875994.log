@@ -1,0 +1,58 @@
+
+=== Load unsloth/Qwen3.5-9B in 4-bit (max_seq_length=4096) ===
+/opt/conda/lib/python3.11/site-packages/huggingface_hub/constants.py:277: FutureWarning: The `HF_HUB_ENABLE_HF_TRANSFER` environment variable is deprecated as 'hf_transfer' is not used anymore. Please use `HF_XET_HIGH_PERFORMANCE` instead to enable high performance transfer with Xet. Visit https://huggingface.co/docs/huggingface_hub/package_reference/environment_variables#hfxethighperformance for more details.
+  warnings.warn(
+/opt/conda/lib/python3.11/site-packages/torch/utils/_pytree.py:185: FutureWarning: optree is installed but the version is too old to support PyTorch Dynamo in C++ pytree. C++ pytree support is disabled. Please consider upgrading optree using `python3 -m pip install --upgrade 'optree>=0.13.0'`.
+  warnings.warn(
+/opt/conda/lib/python3.11/site-packages/torch/utils/_pytree.py:185: FutureWarning: optree is installed but the version is too old to support PyTorch Dynamo in C++ pytree. C++ pytree support is disabled. Please consider upgrading optree using `python3 -m pip install --upgrade 'optree>=0.13.0'`.
+  warnings.warn(
+🦥 Unsloth: Will patch your computer to enable 2x faster free finetuning.
+
+[report] /workspace/phase0b_out/phase0b_report.json
+Traceback (most recent call last):
+  File "/workspace/phase0b_smoke.py", line 268, in <module>
+    main()
+  File "/workspace/phase0b_smoke.py", line 88, in main
+    from unsloth import FastModel  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/conda/lib/python3.11/site-packages/unsloth/__init__.py", line 144, in <module>
+    from ._gpu_init import *
+  File "/opt/conda/lib/python3.11/site-packages/unsloth/_gpu_init.py", line 105, in <module>
+    import unsloth_zoo
+  File "/opt/conda/lib/python3.11/site-packages/unsloth_zoo/__init__.py", line 289, in <module>
+    from .temporary_patches import (
+  File "/opt/conda/lib/python3.11/site-packages/unsloth_zoo/temporary_patches/__init__.py", line 19, in <module>
+    from .gemma import *
+  File "/opt/conda/lib/python3.11/site-packages/unsloth_zoo/temporary_patches/gemma.py", line 22, in <module>
+    from .utils import (
+  File "/opt/conda/lib/python3.11/site-packages/unsloth_zoo/temporary_patches/utils.py", line 146, in <module>
+    from transformers.processing_utils import Unpack
+  File "/opt/conda/lib/python3.11/site-packages/transformers/processing_utils.py", line 79, in <module>
+    from .modeling_utils import PreTrainedAudioTokenizerBase
+  File "/opt/conda/lib/python3.11/site-packages/transformers/modeling_utils.py", line 94, in <module>
+    from .quantizers import HfQuantizer
+  File "/opt/conda/lib/python3.11/site-packages/transformers/quantizers/__init__.py", line 14, in <module>
+    from .auto import AutoHfQuantizer, AutoQuantizationConfig, register_quantization_config, register_quantizer
+  File "/opt/conda/lib/python3.11/site-packages/transformers/quantizers/auto.py", line 67, in <module>
+    from .quantizer_torchao import TorchAoHfQuantizer
+  File "/opt/conda/lib/python3.11/site-packages/transformers/quantizers/quantizer_torchao.py", line 41, in <module>
+    from torchao.prototype.safetensors.safetensors_support import (
+  File "/opt/conda/lib/python3.11/site-packages/torchao/__init__.py", line 107, in <module>
+    from torchao.quantization import (
+  File "/opt/conda/lib/python3.11/site-packages/torchao/quantization/__init__.py", line 31, in <module>
+    from .quant_api import (
+  File "/opt/conda/lib/python3.11/site-packages/torchao/quantization/quant_api.py", line 54, in <module>
+    from torchao.prototype.quantization.quant_api import (
+  File "/opt/conda/lib/python3.11/site-packages/torchao/prototype/quantization/__init__.py", line 2, in <module>
+    from .quant_api import Int8DynamicActivationUIntxWeightConfig, UIntxWeightOnlyConfig
+  File "/opt/conda/lib/python3.11/site-packages/torchao/prototype/quantization/quant_api.py", line 32, in <module>
+    from torchao.quantization.quantize_.common import (
+  File "/opt/conda/lib/python3.11/site-packages/torchao/quantization/quantize_/common/__init__.py", line 1, in <module>
+    from .kernel_preference import KernelPreference
+  File "/opt/conda/lib/python3.11/site-packages/torchao/quantization/quantize_/common/kernel_preference.py", line 16, in <module>
+    @register_as_pytree_constant
+     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/conda/lib/python3.11/site-packages/torchao/utils.py", line 44, in register_as_pytree_constant
+    torch.utils._pytree.register_constant(cls)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: module 'torch.utils._pytree' has no attribute 'register_constant'

@@ -1,0 +1,15 @@
+{
+  "loader_api": null,
+  "load_seconds": null,
+  "train_step_seconds": null,
+  "vram_peak_mb_during_train": null,
+  "adapter_save_seconds": null,
+  "merged_save_seconds": null,
+  "gguf_fp16_seconds": null,
+  "gguf_q4_seconds": null,
+  "final_gguf_bytes": null,
+  "errors": [
+    "unsloth import failed: Unsloth: torch==2.6.0+cpu requires torchvision>=0.21.0, but found torchvision==0.19.1+cu121. Try updating torchvision via `pip install --upgrade \"torchvision>=0.21.0\"`. Please refer to https://pytorch.org/get-started/previous-versions/ for more information."
+  ],
+  "result": "FAIL_unsloth_import"
+}

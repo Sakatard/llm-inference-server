@@ -1,0 +1,67 @@
+# Unsloth + llama.cpp training stack — built once locally, pushed to Docker Hub, used on Vast.ai
+# Goal: zero pip-install at Vast runtime. Just `docker run` + model download + train.
+
+FROM pytorch/pytorch:2.6.0-cuda12.4-cudnn9-devel
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_NO_CACHE_DIR=1 \
+    HF_HUB_ENABLE_HF_TRANSFER=1
+
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
+        git cmake build-essential ca-certificates curl openssh-server tmux less \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --upgrade pip
+
+# Constraints file: torch + cuda libs are PINNED. Everything else resolves freely.
+# Prevents transitive deps (xformers, torchao, etc.) from upgrading torch.
+RUN printf 'torch==2.6.0\ntorchvision==0.21.0\ntorchaudio==2.6.0\nnumpy<2\n' > /tmp/constraints.txt
+
+# Force-install the exact torch we want first
+RUN pip install --force-reinstall \
+        --index-url https://download.pytorch.org/whl/cu124 \
+        "torch==2.6.0" "torchvision==0.21.0" "torchaudio==2.6.0"
+
+# Install full dep stack under constraints (pip resolves transitive deps but cannot bump pinned items)
+RUN pip install -c /tmp/constraints.txt \
+        "torchao==0.7.0" \
+        "transformers==4.49.0" \
+        "trl==0.12.2" \
+        "datasets==3.4.1" \
+        "peft==0.13.2" \
+        "accelerate==1.2.1" \
+        "bitsandbytes==0.45.0" \
+        "xformers==0.0.29.post2" \
+        "triton==3.1.0" \
+        "nest-asyncio" "pydantic" "msgspec" "tyro" \
+        "hf_transfer" "sentencepiece" "protobuf" \
+        "cut-cross-entropy"
+
+RUN pip install -c /tmp/constraints.txt --no-deps "unsloth==2024.12.12" "unsloth_zoo==2024.12.6"
+
+# --- llama.cpp clone + build (skip torch reqs from convert script) ---
+WORKDIR /opt/llama.cpp
+RUN git clone --depth 1 https://github.com/ggml-org/llama.cpp.git . \
+    && cmake -B build -DGGML_CUDA=ON -DLLAMA_CURL=OFF \
+    && cmake --build build -j$(nproc) --target llama-quantize
+
+# Filter torch lines from requirements so they don't override our pinned torch on install
+RUN for f in /opt/llama.cpp/requirements/*.txt; do \
+        sed -i '/^torch/d; /^torchvision/d; /^torchaudio/d' "$f" 2>/dev/null || true; \
+    done \
+    && pip install -r /opt/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt
+
+ENV LLAMA_CPP_DIR=/opt/llama.cpp \
+    PATH="/opt/llama.cpp/build/bin:${PATH}"
+
+# Build-time check: only test no-GPU-required imports. unsloth needs an NVIDIA
+# driver at import time (Triton/CUDA probe) which docker build doesn't have.
+# unsloth import will be tested at runtime on the Vast 4090.
+RUN python -c "import torch; print('torch:', torch.__version__)" \
+ && python -c "import transformers; print('transformers:', transformers.__version__)" \
+ && python -c "import trl; print('trl:', trl.__version__)" \
+ && python -c "import peft; print('peft:', peft.__version__)" \
+ && python -c "import datasets; print('datasets:', datasets.__version__)" \
+ && echo "OK: non-GPU imports clean (unsloth tested at runtime)"
+
+WORKDIR /workspace

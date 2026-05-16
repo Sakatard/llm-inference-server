@@ -1,0 +1,13 @@
+{
+  "loader_api": "FastModel",
+  "load_seconds": 20.42,
+  "train_step_seconds": 23.08,
+  "vram_peak_mb_during_train": 8320,
+  "adapter_save_seconds": 0.89,
+  "merged_save_seconds": 80.64,
+  "gguf_fp16_seconds": 35.99,
+  "gguf_q4_seconds": 129.22,
+  "final_gguf_bytes": 5629108768,
+  "errors": [],
+  "result": "PASS"
+}

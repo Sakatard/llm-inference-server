@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://llm-inference-server.local/finetune/schemas/trade_decision.schema.json",
+  "title": "TradeDecisionV0",
+  "description": "Fine-tune target schema for Qwen3.5-7B polymarket/crypto trading-decision LoRA. Mirrors polymarket-agents `RefereeOutput` (committee/contracts.py) with optional crypto extensions. The fine-tuned model emits one JSON object matching this schema per inference. Strict-mode Pydantic loaders should validate with `extra=forbid`.",
+  "type": "object",
+  "required": [
+    "summary",
+    "global_confidence",
+    "choice_assessments",
+    "uncertainty_flags",
+    "trade_blockers",
+    "rationale"
+  ],
+  "properties": {
+    "summary": {
+      "type": "string",
+      "minLength": 50,
+      "maxLength": 500,
+      "description": "1-3 sentence high-signal summary of the decision and why."
+    },
+    "global_confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Overall calibrated confidence the chosen side will resolve correctly. NOT the same as max(probability) — should reflect data quality and disagreement, not just argmax."
+    },
+    "choice_assessments": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Per-outcome probability table. For polymarket binary markets: 2 entries (YES, NO). For crypto: 2 entries (LONG, SHORT) or 3 entries (LONG, SHORT, HOLD). Probabilities MUST sum to 1.0 ± 0.01.",
+      "items": {
+        "type": "object",
+        "required": ["label", "probability", "confidence", "evidence", "data_coverage", "key_points"],
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Outcome label. Polymarket: matches market outcome (e.g. 'YES', 'NO', 'Trump', 'Harris'). Crypto: 'LONG' | 'SHORT' | 'HOLD'."
+          },
+          "probability": { "type": "number", "minimum": 0, "maximum": 1 },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Calibrated confidence in THIS specific probability estimate. Lower when evidence is thin or contradictory."
+          },
+          "evidence": {
+            "type": "object",
+            "required": ["reliability", "diversity", "recency", "overall_strength"],
+            "additionalProperties": false,
+            "properties": {
+              "reliability": { "type": "number", "minimum": 0, "maximum": 1, "description": "Source trustworthiness." },
+              "diversity":   { "type": "number", "minimum": 0, "maximum": 1, "description": "Independence across sources (avoid echo chamber)." },
+              "recency":     { "type": "number", "minimum": 0, "maximum": 1, "description": "Freshness relative to decision horizon." },
+              "overall_strength": { "type": "number", "minimum": 0, "maximum": 1 }
+            }
+          },
+          "data_coverage": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Fraction of relevant signal categories that had usable data (news, market state, on-chain, etc)."
+          },
+          "contradictions": {
+            "type": "array",
+            "items": { "type": "string", "maxLength": 500 },
+            "description": "Explicit notes about contradicting evidence we considered."
+          },
+          "key_points": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "maxLength": 500 },
+            "description": "Bullet-style key drivers for this assessment. 1-5 items typical."
+          }
+        }
+      }
+    },
+    "uncertainty_flags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "yes_thesis_failed",
+          "no_thesis_failed",
+          "microstructure_unavailable",
+          "stale_data",
+          "thin_evidence_yes",
+          "thin_evidence_no",
+          "rule_ambiguous",
+          "high_disagreement",
+          "starved_bear_evidence",
+          "starved_bull_evidence",
+          "unsupported_citations_yes",
+          "unsupported_citations_no"
+        ]
+      },
+      "description": "Controlled-vocab uncertainty flags (mirrors polymarket-agents UNCERTAINTY_FLAGS_ENUM). Unknown values rejected."
+    },
+    "trade_blockers": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "wide_spread",
+          "thin_book",
+          "exit_depth_high_risk",
+          "stale_quote",
+          "committee_partial",
+          "rule_unmet",
+          "data_coverage_low",
+          "orderbook_unavailable"
+        ]
+      },
+      "description": "Controlled-vocab reasons the decision should NOT be executed even if probabilities favor a side."
+    },
+    "rationale": {
+      "type": "string",
+      "minLength": 100,
+      "maxLength": 4000,
+      "description": "Multi-paragraph reasoning trace. This is what the fine-tuned model is being taught to emit — explicit step-by-step justification linking evidence to probability. Used downstream for audit + human review."
+    },
+    "crypto_extension": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "description": "Optional crypto-specific fields. Null/absent for polymarket markets. Populated for crypto signals consumed by crypto-trader/bot/strategies/base.py Signal.",
+      "properties": {
+        "symbol":     { "type": "string", "description": "e.g. 'BTC/USDT'" },
+        "interval":   { "type": "string", "description": "e.g. '1h', '4h', '1d'" },
+        "timefm_score": { "type": ["number", "null"], "minimum": -1, "maximum": 1, "description": "TimesFM directional score if used. Null if not consulted." },
+        "news_score":   { "type": ["number", "null"], "minimum": -1, "maximum": 1, "description": "News sentiment score [-1, 1]." }
+      }
+    }
+  },
+  "$comment": "Invariants (enforced by Pydantic validator, not JSON schema): sum(choice_assessments[].probability) in [0.99, 1.01]; choice_assessments[].label unique within object. argmax(probability) is the implicit recommended_side — model MUST NOT emit a separate 'recommended_side' field, derive it."
+}

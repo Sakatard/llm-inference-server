@@ -1,0 +1,25 @@
+
+=== Load unsloth/Qwen3.5-9B in 4-bit (max_seq_length=4096) ===
+/opt/conda/lib/python3.11/site-packages/huggingface_hub/constants.py:277: FutureWarning: The `HF_HUB_ENABLE_HF_TRANSFER` environment variable is deprecated as 'hf_transfer' is not used anymore. Please use `HF_XET_HIGH_PERFORMANCE` instead to enable high performance transfer with Xet. Visit https://huggingface.co/docs/huggingface_hub/package_reference/environment_variables#hfxethighperformance for more details.
+  warnings.warn(
+🦥 Unsloth: Will patch your computer to enable 2x faster free finetuning.
+
+[report] /workspace/phase0b_out/phase0b_report.json
+Traceback (most recent call last):
+  File "/workspace/phase0b_smoke.py", line 268, in <module>
+    main()
+  File "/workspace/phase0b_smoke.py", line 88, in main
+    from unsloth import FastModel  # type: ignore
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/conda/lib/python3.11/site-packages/unsloth/__init__.py", line 144, in <module>
+    from ._gpu_init import *
+  File "/opt/conda/lib/python3.11/site-packages/unsloth/_gpu_init.py", line 105, in <module>
+    import unsloth_zoo
+  File "/opt/conda/lib/python3.11/site-packages/unsloth_zoo/__init__.py", line 289, in <module>
+    from .temporary_patches import (
+  File "/opt/conda/lib/python3.11/site-packages/unsloth_zoo/temporary_patches/__init__.py", line 18, in <module>
+    from .common import *
+  File "/opt/conda/lib/python3.11/site-packages/unsloth_zoo/temporary_patches/common.py", line 39, in <module>
+    inductor_config_source = inspect.getsource(torch._inductor.config)
+                                               ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: module 'torch._inductor' has no attribute 'config'

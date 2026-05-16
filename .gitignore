@@ -1,3 +1,8 @@
 models/
 .claude/
 .rtk/
+
+# Phase 4+ fine-tune work environments
+.venv-hf/
+finetune/__pycache__/
+finetune/_remote_runner*.sh

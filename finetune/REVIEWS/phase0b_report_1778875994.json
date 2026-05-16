@@ -1,0 +1,15 @@
+{
+  "loader_api": null,
+  "load_seconds": null,
+  "train_step_seconds": null,
+  "vram_peak_mb_during_train": null,
+  "adapter_save_seconds": null,
+  "merged_save_seconds": null,
+  "gguf_fp16_seconds": null,
+  "gguf_q4_seconds": null,
+  "final_gguf_bytes": null,
+  "errors": [
+    "unhandled: AttributeError: module 'torch.utils._pytree' has no attribute 'register_constant'"
+  ],
+  "result": "FAIL_unhandled"
+}
