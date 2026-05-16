@@ -6,3 +6,5 @@ models/
 .venv-hf/
 finetune/__pycache__/
 finetune/_remote_runner*.sh
+artifacts/llama-server*
+artifacts/*.gguf
