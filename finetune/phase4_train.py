@@ -1,20 +1,17 @@
 """Phase 4 trainer — runs on Vast.ai 4090. QLoRA over the MTP-preserved
-Qwen3.6-27B checkpoint (`llmfan46/Qwen3.6-27B-uncensored-heretic-v2-Native-
-MTP-Preserved`), LM loss only, MTP heads frozen (regex-excluded from PEFT).
+Qwen3.6-27B checkpoint via Unsloth (FastModel) for 27B-on-24GB memory
+fit. MTP heads are explicitly frozen via target_modules regex so they
+keep their pretrained values and survive merge unchanged.
 
 Inputs (all in --work-dir):
-- `train.jsonl`   — chat-template messages, one row per example
-- `holdout.jsonl` — 50-row holdout for eval
-- base model snapshot (downloaded once via huggingface_hub.snapshot_download)
+  train.jsonl     — chat-template messages, one row per example
+  holdout.jsonl   — holdout for eval
 
 Outputs (under --work-dir/output):
-- `adapter/`            — PEFT adapter weights (small, ~200 MB)
-- `merged/`             — full bf16 merged checkpoint (~54 GB)
-- `train_metrics.json`  — loss curve + holdout eval
-- `holdout_preds.jsonl` — per-row prediction with extracted p_yes
-
-Run inside the Vast worker:
-    python3 phase4_train.py --work-dir /workspace
+  adapter/             PEFT weights (~200 MB)
+  merged/              full bf16 merged checkpoint (~54 GB) — skip via --skip-merge
+  train_metrics.json   loss + holdout direction acc + Brier
+  holdout_preds.jsonl  per-row prediction with extracted p_yes
 """
 from __future__ import annotations
 
@@ -27,17 +24,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-
 _BASE_MODEL_ID = "llmfan46/Qwen3.6-27B-uncensored-heretic-v2-Native-MTP-Preserved"
-
-# Match attention + FFN linear projections; skip mtp.* explicitly so the 15
-# MTP heads stay at pretrained values and survive the merge unchanged.
-_LORA_TARGET_REGEX = (
-    r"^(?!.*mtp\.).*(?:"
-    r"q_proj|k_proj|v_proj|o_proj|"
-    r"gate_proj|up_proj|down_proj"
-    r")$"
-)
 
 
 def _log(msg: str) -> None:
@@ -54,17 +41,6 @@ def _load_jsonl(path: Path) -> List[Dict[str, Any]]:
     return out
 
 
-def _build_dataset(rows: List[Dict[str, Any]], tokenizer, max_seq_len: int):
-    from datasets import Dataset
-    texts: List[str] = []
-    for r in rows:
-        text = tokenizer.apply_chat_template(
-            r["messages"], tokenize=False, add_generation_prompt=False
-        )
-        texts.append(text)
-    return Dataset.from_dict({"text": texts})
-
-
 def _extract_p_yes(text: str) -> Optional[float]:
     m = re.search(r"p_yes\s*=\s*([0-9]*\.?[0-9]+)", text)
     if not m:
@@ -76,6 +52,28 @@ def _extract_p_yes(text: str) -> Optional[float]:
     return max(0.0, min(1.0, v))
 
 
+def _build_target_modules(model) -> List[str]:
+    """Match all attention + FFN linears under language_model.layers.<i>.*;
+    EXCLUDE any module under mtp.* so MTP heads stay frozen and survive merge.
+
+    Returns explicit module-name list (Unsloth's preferred form — regex strings
+    are not always honored across FastModel versions)."""
+    keep_prefixes = ("language_model.layers.",)
+    keep_suffixes = (
+        "self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj", "self_attn.o_proj",
+        "mlp.gate_proj", "mlp.up_proj", "mlp.down_proj",
+    )
+    matched: List[str] = []
+    for name, mod in model.named_modules():
+        if "mtp." in name:
+            continue
+        if any(name.startswith(p) for p in keep_prefixes) and any(name.endswith(s) for s in keep_suffixes):
+            # Some Unsloth versions want short names (last token), others want full path.
+            # Pass full path; FastModel.get_peft_model resolves it.
+            matched.append(name)
+    return matched
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--work-dir", type=Path, required=True)
@@ -83,13 +81,12 @@ def main() -> int:
     ap.add_argument("--epochs", type=int, default=3)
     ap.add_argument("--lora-rank", type=int, default=8)
     ap.add_argument("--lora-alpha", type=int, default=16)
-    ap.add_argument("--lora-dropout", type=float, default=0.1)
+    ap.add_argument("--lora-dropout", type=float, default=0.0)
     ap.add_argument("--max-seq-len", type=int, default=4096)
     ap.add_argument("--lr", type=float, default=2e-4)
     ap.add_argument("--batch-size", type=int, default=1)
     ap.add_argument("--grad-accum", type=int, default=8)
-    ap.add_argument("--skip-merge", action="store_true",
-                    help="Skip the bf16 merge step (saves ~20 min when only adapter is needed)")
+    ap.add_argument("--skip-merge", action="store_true")
     args = ap.parse_args()
 
     wd = args.work_dir
@@ -98,59 +95,70 @@ def main() -> int:
     out_dir = wd / "output"
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Imports happen here so --help works without GPU stack installed.
-    import torch
-    from huggingface_hub import snapshot_download
-    from transformers import (
-        AutoModelForCausalLM,
-        AutoTokenizer,
-        BitsAndBytesConfig,
-        TrainingArguments,
-    )
-    from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+    # Imports deferred so --help works without GPU stack.
+    from unsloth import FastModel  # type: ignore
+    import torch  # noqa: F401
+    from datasets import Dataset
+    from transformers import TrainingArguments
     from trl import SFTTrainer
+    import gc
 
-    _log(f"snapshot_download {args.base_model}")
-    base_local = Path(snapshot_download(args.base_model))
-    _log(f"base at {base_local}")
-
-    _log("load tokenizer")
-    tokenizer = AutoTokenizer.from_pretrained(base_local, trust_remote_code=True)
-    if tokenizer.pad_token_id is None:
-        tokenizer.pad_token = tokenizer.eos_token
-
-    _log("load model (4-bit nf4 QLoRA)")
-    bnb = BitsAndBytesConfig(
+    _log(f"FastModel.from_pretrained {args.base_model} (4-bit nf4)")
+    model, tokenizer = FastModel.from_pretrained(
+        args.base_model,
+        max_seq_length=args.max_seq_len,
         load_in_4bit=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.bfloat16,
-        bnb_4bit_use_double_quant=True,
-    )
-    model = AutoModelForCausalLM.from_pretrained(
-        base_local,
-        quantization_config=bnb,
-        device_map="auto",
+        dtype=None,
         trust_remote_code=True,
-        torch_dtype=torch.bfloat16,
     )
-    model = prepare_model_for_kbit_training(model)
 
-    _log("attach LoRA adapter (MTP heads excluded by regex)")
-    lora_cfg = LoraConfig(
+    # Purge vision tower (vision params unused; frees ~2 GB headroom on 4090).
+    vision_n = sum(1 for n, _ in model.named_parameters()
+                   if "visual." in n or "vision_tower" in n or "thinker." in n)
+    if vision_n:
+        _log(f"purge {vision_n} vision-tower params")
+        if hasattr(model.model, "visual"):
+            del model.model.visual
+        gc.collect()
+        import torch as _t
+        _t.cuda.empty_cache()
+
+    _log("build target_modules list (attention + FFN under language_model.layers, EXCLUDING mtp.*)")
+    target_modules = _build_target_modules(model)
+    trunk_count = sum(1 for n in target_modules if "language_model.layers" in n)
+    mtp_count = sum(1 for n in target_modules if "mtp." in n)
+    _log(f"target_modules: {len(target_modules)} total, trunk={trunk_count}, mtp={mtp_count}")
+    if trunk_count == 0:
+        _log("[fail] zero trunk modules matched — name regex misses the actual module layout")
+        return 2
+    if mtp_count != 0:
+        _log("[fail] mtp modules leaked into target_modules — would un-freeze MTP")
+        return 2
+
+    _log(f"FastModel.get_peft_model rank={args.lora_rank}")
+    model = FastModel.get_peft_model(
+        model,
         r=args.lora_rank,
         lora_alpha=args.lora_alpha,
         lora_dropout=args.lora_dropout,
+        target_modules=target_modules,
         bias="none",
-        task_type="CAUSAL_LM",
-        target_modules=_LORA_TARGET_REGEX,
+        use_gradient_checkpointing="unsloth",
+        random_state=42,
+        max_seq_length=args.max_seq_len,
     )
-    model = get_peft_model(model, lora_cfg)
     model.print_trainable_parameters()
 
-    _log("build train + holdout datasets")
+    _log(f"build datasets")
     train_rows = _load_jsonl(train_path)
     holdout_rows = _load_jsonl(holdout_path)
-    train_ds = _build_dataset(train_rows, tokenizer, args.max_seq_len)
+    texts = []
+    for r in train_rows:
+        text = tokenizer.apply_chat_template(
+            r["messages"], tokenize=False, add_generation_prompt=False
+        )
+        texts.append(text)
+    train_ds = Dataset.from_dict({"text": texts})
     _log(f"train={len(train_rows)} holdout={len(holdout_rows)}")
 
     training_args = TrainingArguments(
@@ -164,7 +172,6 @@ def main() -> int:
         save_strategy="epoch",
         save_total_limit=1,
         bf16=True,
-        gradient_checkpointing=True,
         optim="paged_adamw_8bit",
         report_to=[],
         max_seq_length=args.max_seq_len,
@@ -190,15 +197,15 @@ def main() -> int:
     trainer.model.save_pretrained(str(adapter_dir))
     tokenizer.save_pretrained(str(adapter_dir))
 
-    # --- Eval on holdout ---
+    # --- Holdout eval ---
     _log("eval on holdout")
     eval_results: List[Dict[str, Any]] = []
     model.eval()
     correct = 0
+    import torch
     with torch.no_grad():
         for i, row in enumerate(holdout_rows):
             msgs = row["messages"]
-            # Strip the assistant turn — model generates it.
             prompt_msgs = [m for m in msgs if m["role"] != "assistant"]
             true_assistant = next(m for m in msgs if m["role"] == "assistant")["content"]
             prompt = tokenizer.apply_chat_template(
@@ -221,7 +228,6 @@ def main() -> int:
             }
             eval_results.append(row_out)
             if true_p is not None and pred_p is not None:
-                # Direction agreement (above/below 0.5)
                 if (true_p >= 0.5) == (pred_p >= 0.5):
                     correct += 1
             if (i + 1) % 5 == 0:
@@ -245,6 +251,7 @@ def main() -> int:
         "n_holdout_valid": n_valid,
         "direction_acc":   direction_acc,
         "brier":           brier,
+        "n_target_modules": len(target_modules),
     }
     (out_dir / "train_metrics.json").write_text(json.dumps(metrics, indent=2))
     with open(out_dir / "holdout_preds.jsonl", "w") as fh:
@@ -252,25 +259,15 @@ def main() -> int:
             fh.write(json.dumps(r) + "\n")
     _log(f"metrics: {metrics}")
 
-    # --- Merge bf16 (skippable for adapter-only deploys) ---
+    # --- Merge bf16 (optional) ---
     if not args.skip_merge:
-        _log("merge LoRA into base (bf16)")
-        del model
-        del trainer
-        torch.cuda.empty_cache()
-        base_full = AutoModelForCausalLM.from_pretrained(
-            base_local, torch_dtype=torch.bfloat16, device_map="cpu",
-            trust_remote_code=True,
-        )
-        from peft import PeftModel
-        merged = PeftModel.from_pretrained(base_full, str(adapter_dir))
-        merged = merged.merge_and_unload()
+        _log("merge LoRA + save bf16 (~54 GB)")
         merged_dir = out_dir / "merged"
-        merged.save_pretrained(str(merged_dir), safe_serialization=True, max_shard_size="5GB")
-        tokenizer.save_pretrained(str(merged_dir))
-        # Sanity: confirm MTP tensors carried through.
-        mtp_files = list(merged_dir.glob("*.safetensors"))
-        _log(f"merged → {merged_dir} ({len(mtp_files)} safetensors)")
+        # Unsloth's save_pretrained_merged handles the merge in low-mem mode.
+        model.save_pretrained_merged(
+            str(merged_dir), tokenizer, save_method="merged_16bit",
+        )
+        _log(f"merged → {merged_dir}")
 
     _log("done")
     return 0

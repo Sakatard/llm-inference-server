@@ -64,20 +64,14 @@ python3 -c 'import torch; print("torch:", torch.__version__, "cuda_avail:", torc
 echo "[setup] apt deps"
 apt-get update -qq && apt-get install -y -qq git aria2 2>&1 | tail -3
 
-echo "[setup] pip install"
+echo "[setup] pip install unsloth (pulls transformers/peft/trl/bnb/datasets pinned to compatible versions)"
 pip install --quiet --upgrade pip
-pip install --quiet \
-    "transformers>=4.50" \
-    "peft>=0.13" \
-    "trl>=0.12" \
-    "accelerate>=1.0" \
-    "bitsandbytes>=0.45" \
-    "datasets>=3.0" \
-    "huggingface_hub[hf_transfer]>=0.25" \
-    "safetensors" 2>&1 | tail -5
+pip install --quiet "unsloth[cu124-torch260] @ git+https://github.com/unslothai/unsloth.git" 2>&1 | tail -3
+pip install --quiet "torchao<0.13" hf_transfer safetensors 2>&1 | tail -3
 
-echo "[setup] verify imports"
-python3 -c 'import torch, transformers, peft, trl, bitsandbytes, datasets; print("imports OK; trl:", trl.__version__)'
+echo "[setup] verify"
+python3 -c 'import torch; assert torch.cuda.is_available(); print("torch:", torch.__version__, "GPU:", torch.cuda.get_device_name(0))'
+python3 -c 'import unsloth; print("unsloth:", unsloth.__version__)' 2>&1 | tail -2
 
 export HF_HUB_ENABLE_HF_TRANSFER=1
 export TOKENIZERS_PARALLELISM=false
@@ -85,7 +79,6 @@ export TOKENIZERS_PARALLELISM=false
 echo "[train] phase4_train.py"
 python3 /workspace/phase4_train.py --work-dir /workspace 2>&1 | tee /workspace/phase4_train.log
 echo "[train] exit=$?"
-echo "[train] tree:"
 ls -la /workspace/output/ 2>&1 | head -20
 """
 
