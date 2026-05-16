@@ -73,7 +73,12 @@ echo "[setup] verify"
 python3 -c 'import torch; assert torch.cuda.is_available(); print("torch:", torch.__version__, "GPU:", torch.cuda.get_device_name(0))'
 python3 -c 'import unsloth; print("unsloth:", unsloth.__version__)' 2>&1 | tail -2
 
-export HF_HUB_ENABLE_HF_TRANSFER=1
+# hf_transfer is faster but the C extension has no retry/timeout — a single
+# stalled shard hangs forever (observed: prior run stuck 1 hr at 12/13 shards).
+# Default huggingface_hub transport is slower but auto-retries on broken stream.
+# Re-enable only after upstream fixes the hang.
+export HF_HUB_ENABLE_HF_TRANSFER=0
+export HF_HUB_DOWNLOAD_TIMEOUT=60
 export TOKENIZERS_PARALLELISM=false
 
 echo "[train] phase4_train.py"
