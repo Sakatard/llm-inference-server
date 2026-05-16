@@ -196,16 +196,20 @@ def main() -> int:
     model.eval()
     correct = 0
     import torch
+    # Qwen3.6 27B is multimodal; the top-level `tokenizer` is a Qwen3VLProcessor
+    # that runs PIL on any positional arg. Use the underlying text tokenizer to
+    # bypass image preprocessing for our text-only eval.
+    text_tok = tokenizer.tokenizer if hasattr(tokenizer, "tokenizer") else tokenizer
     with torch.no_grad():
         for i, row in enumerate(holdout_rows):
             msgs = row["messages"]
             prompt_msgs = [m for m in msgs if m["role"] != "assistant"]
             true_assistant = next(m for m in msgs if m["role"] == "assistant")["content"]
-            prompt = tokenizer.apply_chat_template(
+            prompt = text_tok.apply_chat_template(
                 prompt_msgs, tokenize=False, add_generation_prompt=True
             )
-            inputs = tokenizer(prompt, return_tensors="pt", truncation=True,
-                               max_length=args.max_seq_len - 256).to(model.device)
+            inputs = text_tok(prompt, return_tensors="pt", truncation=True,
+                              max_length=args.max_seq_len - 256).to(model.device)
             out_ids = model.generate(
                 **inputs, max_new_tokens=256, do_sample=False,
                 pad_token_id=tokenizer.pad_token_id,
