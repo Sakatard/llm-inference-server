@@ -7,20 +7,22 @@
 ## Built from
 
 `Sakatard/llama-cpp-turboquant` fork @ branch `phase-0g-dflash`,
-HEAD `d7ae4f39d` at time of build:
+HEAD `5d7aae248` after history rewrite (PNG/GIF/JPG/SVG/WEBP/MP4 dropped from all 9768 commits to satisfy GitHub LFS hook):
 
 ```
-d7ae4f39d  phase0h v2: revert lucebox CUDA kernel wholesale-copy — fixes Pascal regression
-cb0bafb56  phase0h v1: --decode-engine dflash dispatch + project_hidden stub
-4e854590e  phase0h v1: real llama_model_embed_input_tokens API + wire bridge
-4361635c3  phase0h: strip lucebox LFS pointer assets
-25e9739aa  phase0h: fix ssm_conv signature + shim sources/includes
-67a4f232d  phase0h: skeleton LlamaToDFlashTarget bridge + server CMake hook
-b508d2ac1  phase0g: add LLAMA_DFLASH build option + --decode-engine CLI flag
-7c9358754  phase0g: tree-op ggml extensions + integration shim
-d07efcee9  phase0g: register TURBO[234]_0 as pre-rotated in dflash qwen35 graph
-91b1a7396  Squashed lucebox-hub @ 6fe0d9a0
+5d7aae248  phase0h v2: revert lucebox CUDA kernel wholesale-copy — fixes Pascal regression
+720ba87ce  phase0h v1: --decode-engine dflash dispatch + project_hidden stub
+539aa3813  phase0h v1: real llama_model_embed_input_tokens API + wire bridge
+17d5aff1a  phase0h: strip lucebox LFS pointer assets (now dropped entirely via filter-repo)
+6aa9fd487  phase0h: fix ssm_conv signature + shim sources/includes
+…  phase0h: skeleton LlamaToDFlashTarget bridge + server CMake hook
+…  phase0g: add LLAMA_DFLASH build option + --decode-engine CLI flag
+…  phase0g: tree-op ggml extensions + integration shim
+…  phase0g: register TURBO[234]_0 as pre-rotated in dflash qwen35 graph
+…  Squashed lucebox-hub @ 6fe0d9a0 (binary media stripped)
 ```
+
+Pre-rewrite SHAs (now orphaned): d7ae4f39d / cb0bafb56 / 4e854590e / 4361635c3 / 25e9739aa / 67a4f232d / b508d2ac1 / 7c9358754 / d07efcee9 / 91b1a7396.
 
 ## Build flags
 
@@ -85,9 +87,10 @@ docker cp artifacts/llama-server-phase0h-v2 llm-inference-server:/usr/local/bin/
 
 ## Branch state
 
-Local only, not pushed to Sakatard remote (LFS pointers in subtree squash
-block standard push; force-push to rewrite history needs explicit auth).
-Branch lives at `/tmp/mtp-scratch/llama` on `phase-0g-dflash`.
+Pushed to `Sakatard/llama-cpp-turboquant` `phase-0g-dflash` @ `5d7aae248` (2026-05-16).
+LFS pointer rejection resolved by `git-filter-repo --invert-paths` dropping
+all binary media globs (`*.png *.gif *.jpg *.jpeg *.svg *.webp *.mp4`)
+from every commit. Local working copy at `/tmp/mtp-scratch/llama`.
 
 ## v3 priorities
 

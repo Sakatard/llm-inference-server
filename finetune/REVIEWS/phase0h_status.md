@@ -64,21 +64,19 @@ Hypothesis: `enable_language(CUDA)` in the shim's scope reset some flag (e.g. `C
 5. Then test `--decode-engine dflash` → expect ≥18 tok/s (no slowdown vs legacy since project_hidden stub falls through to AR)
 6. Real throughput gain from dflash requires v3: real `project_hidden_to_tokens` ggml graph + intermediate layer feature capture
 
-## Branch state (local, not pushed)
+## Branch state (pushed)
+
+Pushed to `Sakatard/llama-cpp-turboquant` `phase-0g-dflash` @ `5d7aae248` after `filter-repo --invert-paths` dropped all binary media globs across 9768 rewritten commits. Post-rewrite SHAs:
 
 ```
-cb0bafb56  phase0h v1: --decode-engine dflash dispatch + project_hidden stub
-4e854590e  phase0h v1: real llama_model_embed_input_tokens API + wire bridge
-4361635c3  phase0h: strip lucebox LFS pointer assets (banner/hero/demo images)
-25e9739aa  phase0h: ssm_conv signature + shim sources/includes
-67a4f232d  phase0h: skeleton LlamaToDFlashTarget bridge
-b508d2ac1  phase0g: LLAMA_DFLASH option + --decode-engine CLI flag
-7c9358754  phase0g: tree-op ggml extensions + integration shim
-d07efcee9  phase0g: TURBO[234]_0 pre-rotated patch
-91b1a7396  Squashed lucebox-hub @ 6fe0d9a0
+5d7aae248  phase0h v2: revert lucebox CUDA kernel wholesale-copy — fixes Pascal regression
+720ba87ce  phase0h v1: --decode-engine dflash dispatch + project_hidden stub
+539aa3813  phase0h v1: real llama_model_embed_input_tokens API + wire bridge
+17d5aff1a  phase0h: strip lucebox LFS pointer assets (now fully dropped, not just patched)
+6aa9fd487  phase0h: ssm_conv signature + shim sources/includes
 ```
 
-10 commits ahead of `feature/mtp-turboquant-integration`. Push to Sakatard remote blocked by LFS pointers in subtree squash — needs force-push to rewrite history (user authorization required).
+10 commits ahead of `feature/mtp-turboquant-integration` after rewrite. LFS rejection resolved.
 
 ## Container deploy
 
