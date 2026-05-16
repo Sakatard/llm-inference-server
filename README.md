@@ -96,16 +96,16 @@ that aren't (yet) in mainline:
 | Patch | Adds |
 |-------|------|
 | `0001-turboquant-mtp-base.patch` | TurboQuant turbo3/turbo4 KV cache + MTP self-speculative (PR #22673), ~26k LoC squashed |
-| `0002-phase0g-register-TURBO*` | Pre-rotated turbo type registration in the dflash qwen35 target graph |
-| `0003-phase0g-port-lucebox*` | Tree-op ggml extensions (`ggml_ssm_conv_tree`, `ggml_gated_delta_net_tree`) + lucebox integration shim |
-| `0004-phase0g-add-LLAMA_DFLASH*` | `LLAMA_DFLASH=ON` build option + `--decode-engine` CLI flag |
-| `0005..0010-phase0h-*` | `LlamaToDFlashTarget` bridge, server CMake hook, `llama_model_embed_input_tokens` public API, Pascal sm_61 CUDA fixes |
+| `0002` | Pre-rotated turbo type registration in the dflash qwen35 target graph |
+| `0003` | Tree-op ggml extensions (`ggml_ssm_conv_tree`, `ggml_gated_delta_net_tree`) + lucebox integration shim |
+| `0004` | `LLAMA_DFLASH=ON` build option + `--decode-engine` CLI flag |
+| `0005..0010` | `LlamaToDFlashTarget` bridge, server CMake hook, `llama_model_embed_input_tokens` public API, Pascal sm_61 CUDA fixes |
 
 Between `0001` and `0002`, the build clones
 [`Luce-Org/lucebox-hub`](https://github.com/Luce-Org/lucebox-hub) at
 `6fe0d9a0` into `vendor/lucebox-hub/`. Lucebox supplies the dFlash CUDA
-kernels (FWHT + ternary draft, DDTree verify); the Phase 0g/0h patches
-glue them into llama.cpp without modifying lucebox itself.
+kernels (FWHT + ternary draft, DDTree verify); patches 0002–0010 glue them
+into llama.cpp without modifying lucebox itself.
 
 There is **no separate llama.cpp fork** — all deltas live in this repo as
 patches. Bumping upstream means rebasing `patches/llama-cpp/0001*` against
@@ -271,10 +271,8 @@ gating (or keep them — they cost negligible perf on newer cores).
 ├── Dockerfile                      # primary image
 ├── Dockerfile.combined             # qwen + whisper + timesfm in one build
 ├── Dockerfile.timesfm              # TimesFM-only image
-├── patches/llama-cpp/              # 10-patch series (TurboQuant + MTP + Phase 0g/0h)
-├── artifacts/                      # deployable binaries + status docs
-│   ├── llama-server-phase0h-v2
-│   └── README-phase0h-v2.md
+├── patches/llama-cpp/              # 10-patch series (TurboQuant + MTP + dflash)
+├── artifacts/                      # deployable binaries
 ├── examples/                       # ready-to-run client scripts
 └── API.md                          # endpoint reference
 ```
