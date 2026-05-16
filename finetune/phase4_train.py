@@ -93,8 +93,7 @@ def main() -> int:
     from unsloth import FastModel  # type: ignore
     import torch  # noqa: F401
     from datasets import Dataset
-    from transformers import TrainingArguments
-    from trl import SFTTrainer
+    from trl import SFTTrainer, SFTConfig
     import gc
 
     _log(f"FastModel.from_pretrained {args.base_model} (4-bit nf4)")
@@ -155,7 +154,7 @@ def main() -> int:
     train_ds = Dataset.from_dict({"text": texts})
     _log(f"train={len(train_rows)} holdout={len(holdout_rows)}")
 
-    training_args = TrainingArguments(
+    sft_cfg = SFTConfig(
         output_dir=str(out_dir / "trainer"),
         num_train_epochs=args.epochs,
         per_device_train_batch_size=args.batch_size,
@@ -169,15 +168,15 @@ def main() -> int:
         optim="paged_adamw_8bit",
         report_to=[],
         max_seq_length=args.max_seq_len,
+        dataset_text_field="text",
+        packing=False,
     )
 
     trainer = SFTTrainer(
         model=model,
         tokenizer=tokenizer,
-        args=training_args,
+        args=sft_cfg,
         train_dataset=train_ds,
-        dataset_text_field="text",
-        packing=False,
     )
 
     _log("train")
