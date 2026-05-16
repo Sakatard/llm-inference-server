@@ -10,25 +10,12 @@ One Python process owns lifecycle for all of them. Each model spins up only
 when the relevant route is hit, and spins down again after a configurable
 idle window so the GPU drops to P8 between bursts.
 
-The repo also contains an end-to-end fine-tuning pipeline (`finetune/`) for
-producing a `qwen-trader` model from Polymarket data — the inference server
-is the deployment target for that pipeline.
-
 ---
 
 ## What is this?
 
-Two interleaved projects sharing the same repo:
-
-1. **Inference server** (`server.py`, `Dockerfile`, `docker-compose.yaml`).
-   Production HTTP API on `:8088` routing OpenAI-shaped requests to the
-   right local model. Idle-aware, no API keys, no per-request fees.
-2. **Fine-tuning pipeline** (`finetune/`). Builds and trains a domain-tuned
-   Qwen 3.6 27B for prediction-market forecasting. Reuses the inference
-   server as the deployment substrate when training finishes.
-
-The two are usable independently — you can run the inference server without
-touching `finetune/` at all.
+Production HTTP API on `:8088` routing OpenAI-shaped requests to the right
+local model. Idle-aware, no API keys, no per-request fees.
 
 | Model | Route | Notes |
 |-------|-------|-------|
@@ -145,7 +132,7 @@ the new mainline.
 | `MTP_DRAFT_P_MIN` | `0.0` | Acceptance probability floor for drafts |
 | `MTP_CACHE_TYPE` | `turbo4` | KV cache quant (`turbo4` / `q8_0` / `f16`) |
 | `MTP_CTX` | `65536` (turbo4) / `32768` (other) | Context window — auto-shrinks for unquantised caches |
-| `DECODE_ENGINE` | `dflash` | `legacy` (standard llama_decode) or `dflash` (Phase 0h dispatch — currently logs + falls through; full wiring is Phase 0h v3) |
+| `DECODE_ENGINE` | `dflash` | `legacy` (standard llama_decode) or `dflash` (links the dflash library + logs dispatch; current binary falls through to llama_decode — full spec-decode wiring is future work) |
 
 To change anything, either set under `environment:` in
 `docker-compose.yaml` or pass at `docker compose run` time, then
@@ -160,11 +147,12 @@ decoded:
 
 | Build | Decode tok/s | vs baseline |
 |-------|--------------|-------------|
-| Phase 0c baseline (no MTP, Q4_K_M, turbo4) | 18.48 | 1.00× |
-| Phase 0h v2 (MTP draft-n=3, p_min=0.0, turbo4, `--decode-engine dflash` stub) | **20.03** | **+8.4%** |
+| Non-MTP (Q4_K_M, turbo4) | 18.48 | 1.00× |
+| MTP + dflash bridge (IQ4_XS, draft-n=3, p_min=0.0, turbo4) | **20.03** | **+8.4%** |
 
-Phase 0h v3 (real dflash spec-decode dispatch + tree-mode kernels) targets
-≥28 tok/s; tracked as a future task.
+Full dflash spec-decode dispatch + tree-mode CUDA kernels are not wired
+yet (the current build links the dflash library but logs + falls through
+to standard llama_decode). When wired, target is ≥28 tok/s.
 
 ---
 
@@ -246,87 +234,6 @@ print(resp.choices[0].message.content)
 
 ---
 
-## Fine-tuning Pipeline (`finetune/`)
-
-A multi-phase pipeline for producing a domain-tuned `qwen-trader` model
-that predicts Polymarket binary outcomes. Phases (per `finetune/SPEC.md`):
-
-| Phase | Status | What |
-|-------|--------|------|
-| 0  | ✅ done | Pascal deployment + training-loader benchmark |
-| 0c | ✅ done | P40 throughput baseline (18.48 tok/s) |
-| 0f | ✅ done | Trained MTP head on Qwen 3.6 27B (LM + α·MTP loss, QLoRA on Vast 4090) |
-| 0g | ✅ done | Foundational dFlash compile/link infra (patches 0002-0004) |
-| 0h v1/v2 | ✅ done | `LlamaToDFlashTarget` bridge + Pascal CUDA fix; 20.03 tok/s |
-| 0h v3 | ⏳ pending | Real dispatch + tree-mode CUDA kernels + feature capture (≥28 tok/s target) |
-| 1  | ✅ done | Baseline-without-FT eval (FT-may-not-be-needed gate) |
-| 2  | ✅ done | Frozen teacher-runner contract (`finetune/teacher_runner/`) |
-| 3  | ✅ done | Data archival reconstruction (`finetune/data_archival/`) |
-| 4  | ⏳ in progress | Smoke train 200 examples on Vast.ai |
-| 5–7 | ⏳ pending | Learning curve, α-ablation, deploy as qwen-trader |
-
-### Pipeline overview
-
-```text
-  Gamma API (resolved markets)
-        │
-        ▼
-  build_bundles.py ─────► bundles.jsonl
-        │ (resolves news, parses rules, attaches connector summary)
-        ▼
-  label_bundles.py ─────► labels.jsonl
-        │ (runs polymarket-agents committee — yes_thesis + no_thesis +
-        │  gpt-5.5 referee — via teacher_runner frozen contract)
-        ▼
-  format_jsonl.py ──────► train.jsonl + holdout.jsonl
-        │ (system / user / assistant chat-template)
-        ▼
-  vast_run_phase*.py ──► Qwen 3.6 27B QLoRA on Vast.ai 4090
-        │ (rank 8, alpha 16, dropout 0.1, seq 4k, 3 epochs)
-        ▼
-  merge + quantize ────► qwen-trader.gguf
-        │
-        ▼
-  models/Qwen3.6-27B-Trader-IQ4_XS.gguf — drop in beside the default
-```
-
-### Key modules
-
-- **`finetune/teacher_runner/`** — frozen Pydantic contract
-  (`TeacherContextBundle` → `TeacherLabel`) wrapping
-  [polymarket-agents](https://github.com/Sakatard/polymarket-agents)
-  committee inference. SHA-pinned via `PINNED_SHA.txt`.
-- **`finetune/data_archival/check_reconstruction.py`** — Phase 3 quality
-  gate (sampled 20 closed Polymarket markets across 0-180d, scored trade
-  history + news-window reconstructibility).
-- **`finetune/build_bundles.py`** — Phase 4 step 1 dataset builder
-  (gnews-backed news window, polymarket-agents `parse_market_rules`).
-- **`finetune/label_bundles.py`** — Phase 4 step 2 label runner. Resumable.
-- **`finetune/format_jsonl.py`** — Phase 4 step 3 chat-template JSONL
-  emitter with 50-market holdout split.
-- **`finetune/qwen35_mtp_modeling.py`** — Phase 0f PyTorch `nn.Module`
-  MTP head reimplementation (transformers strips MTP at load; this restores
-  it with LM + α·MTP_CE supervision).
-- **`finetune/vast_run_phase0[bef].py`** — Vast.ai orchestrators
-  (spec file, SSH-ready wait, dataset push, train, model pull).
-
-### Phase 2/3 invariants
-
-- The committee in polymarket-agents is bind-mounted into the
-  `polymarket-trader` container at `/app/agents`. The teacher-runner
-  resolves the bind-mounted SHA on host before each call so any drift
-  from `PINNED_SHA.txt` fails loudly instead of silently mislabeling.
-- The referee model is `gpt-5.5`, reached via the local
-  [`claude-proxy`](../claude-proxy) `/v1/chat/completions` shim (OpenAI
-  SDK calls translate to Anthropic Messages internally, route to ChatGPT
-  Plus Codex Responses, return as OpenAI ChatCompletions). yes/no theses
-  use OpenRouter `deepseek-v3.2` directly.
-- Phase 3's 70% full-reconstruction gate failed empirically (40% across
-  20 substantive closed markets), so Phase 4 takes the SPEC-defined
-  partial-context contingency: filter to `news_count ≥ 5` markets only.
-
----
-
 ## GPU Behavior
 
 - `server.py` (Python, no CUDA libs) stays up continuously.
@@ -365,16 +272,6 @@ gating (or keep them — they cost negligible perf on newer cores).
 ├── Dockerfile.combined             # qwen + whisper + timesfm in one build
 ├── Dockerfile.timesfm              # TimesFM-only image
 ├── patches/llama-cpp/              # 10-patch series (TurboQuant + MTP + Phase 0g/0h)
-├── finetune/                       # training pipeline (see Fine-tuning Pipeline above)
-│   ├── SPEC.md
-│   ├── teacher_runner/             # Phase 2 frozen contract
-│   ├── data_archival/              # Phase 3 reconstruction gate
-│   ├── build_bundles.py            # Phase 4 step 1
-│   ├── label_bundles.py            # Phase 4 step 2
-│   ├── format_jsonl.py             # Phase 4 step 3
-│   ├── qwen35_mtp_modeling.py      # Phase 0f MTP head reimplementation
-│   ├── vast_run_phase0*.py         # Vast.ai orchestrators
-│   └── REVIEWS/                    # phase status docs, bench results, cross-model reviews
 ├── artifacts/                      # deployable binaries + status docs
 │   ├── llama-server-phase0h-v2
 │   └── README-phase0h-v2.md
@@ -395,8 +292,6 @@ gating (or keep them — they cost negligible perf on newer cores).
 - **[Qwen](https://huggingface.co/Qwen)** — Alibaba's language and multimodal models
 - **[OpenAI Whisper](https://github.com/openai/whisper)** — Whisper model weights
 - **[PyTorch](https://pytorch.org/)** — ML framework (v2.4.1 for Pascal compatibility)
-- **[Unsloth](https://github.com/unslothai/unsloth)** — QLoRA training stack (Phase 0f)
-- **[polymarket-agents](https://github.com/Sakatard/polymarket-agents)** — committee inference (teacher labels in Phase 4)
 
 ---
 
