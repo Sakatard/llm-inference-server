@@ -64,6 +64,12 @@ def _verify_sha(sha: str) -> None:
 
 def _call_committee_locally(bundle: TeacherContextBundle) -> Dict[str, Any]:
     """Direct import + invocation. Only valid when running inside trader."""
+    import sys as _sys
+    # Trader's WORKDIR is /app but scripts launched from /tmp/ inherit
+    # sys.path[0]=/tmp, missing /app. Inject it so the agents package is
+    # discoverable regardless of how the runner was invoked.
+    if "/app" not in _sys.path:
+        _sys.path.insert(0, "/app")
     from agents.research.committee.runner import run_committee  # type: ignore[import-not-found]
     out = run_committee(
         market_payload=bundle.market_payload,
