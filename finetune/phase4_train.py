@@ -53,25 +53,19 @@ def _extract_p_yes(text: str) -> Optional[float]:
 
 
 def _build_target_modules(model) -> List[str]:
-    """Match all attention + FFN linears under language_model.layers.<i>.*;
-    EXCLUDE any module under mtp.* so MTP heads stay frozen and survive merge.
-
-    Returns explicit module-name list (Unsloth's preferred form — regex strings
-    are not always honored across FastModel versions)."""
-    keep_prefixes = ("language_model.layers.",)
-    keep_suffixes = (
-        "self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj", "self_attn.o_proj",
-        "mlp.gate_proj", "mlp.up_proj", "mlp.down_proj",
+    """Match the trunk attention + FFN linears under
+    `(model.)?model.language_model.layers.<i>.{self_attn|mlp}.*` and EXCLUDE
+    anything under `mtp.*`. The double `model.model.` prefix accounts for
+    Qwen3.5's wrapped layout (CausalLM wraps base which wraps language_model)."""
+    import torch.nn as nn
+    pat = re.compile(
+        r"^(model\.)?model\.language_model\.layers\.\d+\."
+        r"(self_attn\.(q|k|v|o)_proj|mlp\.(gate|up|down)_proj)$"
     )
-    matched: List[str] = []
-    for name, mod in model.named_modules():
-        if "mtp." in name:
-            continue
-        if any(name.startswith(p) for p in keep_prefixes) and any(name.endswith(s) for s in keep_suffixes):
-            # Some Unsloth versions want short names (last token), others want full path.
-            # Pass full path; FastModel.get_peft_model resolves it.
-            matched.append(name)
-    return matched
+    return [
+        name for name, mod in model.named_modules()
+        if "mtp." not in name and pat.match(name) and isinstance(mod, nn.Linear)
+    ]
 
 
 def main() -> int:
