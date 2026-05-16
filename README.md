@@ -10,6 +10,13 @@ One Python process owns lifecycle for all of them. Each model spins up only
 when the relevant route is hit, and spins down again after a configurable
 idle window so the GPU drops to P8 between bursts.
 
+> **Models are interchangeable.** The Qwen / Whisper / TimesFM defaults
+> below are this author's deployment — swap in any GGUF for the chat
+> routes, any whisper.cpp-compatible `.bin` for the audio route, and edit
+> `server.py` / the env knobs accordingly. The architecture (single
+> Python router + on-demand subprocess models + idle reaper) is the
+> point; the specific weights are not.
+
 ---
 
 ## What is this?
