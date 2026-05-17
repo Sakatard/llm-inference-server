@@ -26,7 +26,7 @@ import sys
 import time
 from pathlib import Path
 
-MAX_DOLLARS_PER_HOUR = 0.90
+MAX_DOLLARS_PER_HOUR = 1.10
 MAX_WALLCLOCK_MIN = 240
 MIN_GPU_RAM_GB = 24
 MIN_RELIABILITY = 0.99
