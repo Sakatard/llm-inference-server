@@ -64,9 +64,9 @@ python3 -c 'import torch; print("torch:", torch.__version__, "cuda_avail:", torc
 echo "[setup] apt deps"
 apt-get update -qq && apt-get install -y -qq git aria2 2>&1 | tail -3
 
-echo "[setup] pip install unsloth (pulls transformers/peft/trl/bnb/datasets pinned to compatible versions)"
+echo "[setup] pip install unsloth (drop [cu124-torch260] extra — mutex hf-extras conflict in 2026.5.x)"
 pip install --quiet --upgrade pip
-pip install --quiet "unsloth[cu124-torch260] @ git+https://github.com/unslothai/unsloth.git" 2>&1 | tail -3
+pip install --quiet "unsloth==2026.5.2" 2>&1 | tail -3
 pip install --quiet "torchao<0.13" hf_transfer safetensors 2>&1 | tail -3
 
 echo "[setup] verify"
