@@ -19,7 +19,7 @@ START_TIMEOUT = int(os.environ.get("START_TIMEOUT", "120"))
 # an MTP-converted GGUF (heads + projections preserved).
 ENABLE_MTP = os.environ.get("ENABLE_MTP", "0") == "1"
 MTP_MODEL_PATH = os.environ.get(
-    "MTP_MODEL_PATH", "/models/Qwen3.6-27B-IQ4_XS.gguf"
+    "MTP_MODEL_PATH", "/models/Qwen3.6-27B-Trader-IQ4_XS.gguf"
 )
 try:
     MTP_DRAFT_N_MAX = int(os.environ.get("MTP_DRAFT_N_MAX", "3"))
@@ -158,7 +158,7 @@ if ENABLE_MTP:
         "--decode-engine", DECODE_ENGINE,
     ]
 else:
-    _qwen_model = "/models/Qwen3.6-27B-Q4_K_M.gguf"
+    _qwen_model = "/models/Qwen3.6-27B-IQ4_XS.gguf"
     _qwen_cache_type = "turbo4"
     _qwen_ctx = "65536"
     _qwen_spec_args = []

@@ -230,11 +230,15 @@ def main():
         if not ssh_ready:
             fail("ssh never became ready")
 
-        banner("scp phase4_train.py + train.jsonl + holdout.jsonl + convert_to_gguf.sh")
+        banner("scp phase4_train.py + train.jsonl + holdout.jsonl + convert_to_gguf.sh + patches/")
         subprocess.run(["scp", *scp_opts, str(TRAIN_SCRIPT),
                         f"{ssh_user}@{ssh_host}:/workspace/phase4_train.py"], check=True)
         subprocess.run(["scp", *scp_opts, str(REPO_DIR / "convert_to_gguf.sh"),
                         f"{ssh_user}@{ssh_host}:/workspace/convert_to_gguf.sh"], check=True)
+        # MTP-aware convert_hf_to_gguf.py lives behind the TurboQuant+MTP base
+        # patch; convert_to_gguf.sh applies it before running the converter.
+        subprocess.run(["scp", *scp_opts, "-r", str(REPO_DIR.parent / "patches" / "llama-cpp"),
+                        f"{ssh_user}@{ssh_host}:/workspace/patches/"], check=True)
         subprocess.run(["scp", *scp_opts, str(TRAIN_JSONL),
                         f"{ssh_user}@{ssh_host}:/workspace/train.jsonl"], check=True)
         subprocess.run(["scp", *scp_opts, str(HOLDOUT_JSONL),

@@ -21,16 +21,30 @@ MERGED_DIR=${1:-/workspace/output/merged}
 OUT_DIR=${2:-/workspace/output/gguf}
 LLAMA_DIR=${LLAMA_DIR:-/workspace/llama.cpp}
 UPSTREAM_SHA=${UPSTREAM_SHA:-253ba110bcd372207ca7b0bb56f1ea10d60d53fd}
+PATCHES_DIR=${PATCHES_DIR:-/workspace/patches/llama-cpp}
 
 mkdir -p "$OUT_DIR"
 
-echo "[gguf] $(date +%T) ensure llama.cpp checkout at $UPSTREAM_SHA"
+echo "[gguf] $(date +%T) ensure llama.cpp checkout at $UPSTREAM_SHA + apply MTP patches"
 if [ ! -d "$LLAMA_DIR" ]; then
     git clone https://github.com/ggml-org/llama.cpp.git "$LLAMA_DIR"
 fi
 cd "$LLAMA_DIR"
 git fetch --depth 50 origin || true
 git checkout "$UPSTREAM_SHA"
+git reset --hard "$UPSTREAM_SHA"
+
+# Apply the TurboQuant + MTP base patch so convert_hf_to_gguf.py knows about
+# Qwen3.5/3.6's qwen35 arch + nextn_predict_layers tensor naming. Without this
+# patch the upstream converter silently drops mtp.* tensors and the resulting
+# GGUF fails to load as MTP context.
+if [ -f "$PATCHES_DIR/0001-turboquant-mtp-base.patch" ]; then
+    echo "[gguf] applying 0001-turboquant-mtp-base.patch"
+    git apply --whitespace=nowarn "$PATCHES_DIR/0001-turboquant-mtp-base.patch"
+else
+    echo "[gguf] FAIL: $PATCHES_DIR/0001-turboquant-mtp-base.patch missing — convert would drop MTP"
+    exit 2
+fi
 
 echo "[gguf] $(date +%T) install convert deps"
 for f in requirements/requirements-convert_hf_to_gguf.txt; do
@@ -56,18 +70,21 @@ python3 convert_hf_to_gguf.py "$MERGED_DIR" \
     --outtype bf16 \
     --outfile "$BF16_GGUF"
 
-echo "[gguf] $(date +%T) verify MTP tensors in bf16 GGUF"
-build/bin/llama-quantize --help 2>&1 | head -2
-build/bin/llama-quantize --quantize-output-tensor "$BF16_GGUF" 2>/dev/null || true
-# Cheap check: count of mtp tensors via gguf-dump
-python3 -c "
-import gguf
+echo "[gguf] $(date +%T) verify MTP tensors in bf16 GGUF (gguf py module via pip)"
+pip install --quiet gguf 2>&1 | tail -2 || true
+python3 - <<PYEOF
+import sys
+try:
+    import gguf
+except ImportError:
+    print("[gguf] gguf module not available; skipping MTP verify"); sys.exit(0)
 r = gguf.GGUFReader('$BF16_GGUF')
-mtp_tensors = [t.name for t in r.tensors if t.name.startswith('mtp.') or '.mtp.' in t.name]
-print(f'[gguf] mtp tensor count: {len(mtp_tensors)}')
-if not mtp_tensors:
-    raise SystemExit('FAIL: no mtp.* tensors in bf16 GGUF')
-"
+mtp = [t.name for t in r.tensors if 'mtp' in t.name.lower() or 'nextn' in t.name.lower()]
+print(f'[gguf] mtp/nextn tensor count: {len(mtp)}')
+print(f'[gguf] first 5: {mtp[:5]}')
+if not mtp:
+    sys.exit('FAIL: no mtp/nextn tensors in bf16 GGUF — convert patch ineffective')
+PYEOF
 
 echo "[gguf] $(date +%T) quantize → IQ4_XS w/ Q8_0 nextn (matches prod IQ4_XS path)"
 build/bin/llama-quantize \
