@@ -209,9 +209,9 @@ def main() -> int:
                 prompt_msgs, tokenize=False, add_generation_prompt=True
             )
             inputs = text_tok(prompt, return_tensors="pt", truncation=True,
-                              max_length=args.max_seq_len - 256).to(model.device)
+                              max_length=args.max_seq_len - 1024).to(model.device)
             out_ids = model.generate(
-                **inputs, max_new_tokens=256, do_sample=False,
+                **inputs, max_new_tokens=1024, do_sample=False,
                 pad_token_id=tokenizer.pad_token_id,
             )
             pred_text = tokenizer.decode(out_ids[0][inputs.input_ids.shape[1]:], skip_special_tokens=True)

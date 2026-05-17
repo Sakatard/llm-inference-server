@@ -83,8 +83,17 @@ export TOKENIZERS_PARALLELISM=false
 
 echo "[train] phase4_train.py"
 python3 /workspace/phase4_train.py --work-dir /workspace 2>&1 | tee /workspace/phase4_train.log
-echo "[train] exit=$?"
+TRAIN_RC=$?
+echo "[train] exit=$TRAIN_RC"
 ls -la /workspace/output/ 2>&1 | head -20
+
+if [ $TRAIN_RC -eq 0 ] && [ -d /workspace/output/merged ]; then
+    echo "[gguf] convert + quantize merged → IQ4_XS-Q8nextn"
+    bash /workspace/convert_to_gguf.sh 2>&1 | tee -a /workspace/phase4_train.log
+    ls -lh /workspace/output/gguf/ 2>&1 | head -10
+else
+    echo "[gguf] skip — train rc=$TRAIN_RC or merged dir missing"
+fi
 """
 
 
@@ -214,9 +223,11 @@ def main():
         if not ssh_ready:
             fail("ssh never became ready")
 
-        banner("scp phase4_train.py + train.jsonl + holdout.jsonl")
+        banner("scp phase4_train.py + train.jsonl + holdout.jsonl + convert_to_gguf.sh")
         subprocess.run(["scp", *scp_opts, str(TRAIN_SCRIPT),
                         f"{ssh_user}@{ssh_host}:/workspace/phase4_train.py"], check=True)
+        subprocess.run(["scp", *scp_opts, str(REPO_DIR / "convert_to_gguf.sh"),
+                        f"{ssh_user}@{ssh_host}:/workspace/convert_to_gguf.sh"], check=True)
         subprocess.run(["scp", *scp_opts, str(TRAIN_JSONL),
                         f"{ssh_user}@{ssh_host}:/workspace/train.jsonl"], check=True)
         subprocess.run(["scp", *scp_opts, str(HOLDOUT_JSONL),
@@ -250,6 +261,21 @@ def main():
         subprocess.run(["scp", *scp_opts, "-r",
                         f"{ssh_user}@{ssh_host}:/workspace/output/adapter",
                         str(out_local / "adapter")])
+        # Quantized GGUF (always pull when present — drop-in for ./models/)
+        gguf_remote_glob = "/workspace/output/gguf/qwen-trader-IQ4_XS-Q8nextn.gguf"
+        models_dir = REPO_DIR.parent / "models"
+        models_dir.mkdir(parents=True, exist_ok=True)
+        gguf_local = models_dir / f"Qwen3.6-27B-Trader-IQ4_XS_{ts}.gguf"
+        banner(f"Fetch quantized GGUF → {gguf_local.name}")
+        scp_rc = subprocess.run(
+            ["scp", *scp_opts, f"{ssh_user}@{ssh_host}:{gguf_remote_glob}", str(gguf_local)],
+        ).returncode
+        if scp_rc == 0 and gguf_local.exists():
+            sz_gb = gguf_local.stat().st_size / 1e9
+            print(f"  GGUF transferred ({sz_gb:.2f} GB)")
+        else:
+            print(f"  [WARN] GGUF scp rc={scp_rc} — convert may have failed; check log")
+
         # merged (opt-in only — large)
         if os.environ.get("PHASE4_FETCH_MERGED") == "1":
             banner("Fetch merged bf16 checkpoint (~54 GB)")
