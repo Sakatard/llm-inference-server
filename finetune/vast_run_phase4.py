@@ -237,8 +237,11 @@ def main():
                         f"{ssh_user}@{ssh_host}:/workspace/convert_to_gguf.sh"], check=True)
         # MTP-aware convert_hf_to_gguf.py lives behind the TurboQuant+MTP base
         # patch; convert_to_gguf.sh applies it before running the converter.
+        # mkdir parent first because scp -r doesn't auto-create the parent dir.
+        subprocess.run(["ssh", *ssh_opts, f"{ssh_user}@{ssh_host}",
+                        "mkdir -p /workspace/patches"], check=True)
         subprocess.run(["scp", *scp_opts, "-r", str(REPO_DIR.parent / "patches" / "llama-cpp"),
-                        f"{ssh_user}@{ssh_host}:/workspace/patches/"], check=True)
+                        f"{ssh_user}@{ssh_host}:/workspace/patches/llama-cpp"], check=True)
         subprocess.run(["scp", *scp_opts, str(TRAIN_JSONL),
                         f"{ssh_user}@{ssh_host}:/workspace/train.jsonl"], check=True)
         subprocess.run(["scp", *scp_opts, str(HOLDOUT_JSONL),
