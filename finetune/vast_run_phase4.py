@@ -27,6 +27,7 @@ import time
 from pathlib import Path
 
 MAX_DOLLARS_PER_HOUR = 1.10
+MIN_DOLLARS_PER_HOUR = 0.40  # skip dead $0.28 provider (IP 66.183.63.178, offer ~26349244-class — intended=stopped)
 MAX_WALLCLOCK_MIN = 240
 MIN_GPU_RAM_GB = 24
 MIN_RELIABILITY = 0.99
@@ -132,11 +133,11 @@ def main():
     chosen = None
     for off in offers:
         dph = float(off.get("dph_total") or off.get("dph") or 999)
-        if dph <= MAX_DOLLARS_PER_HOUR:
+        if MIN_DOLLARS_PER_HOUR <= dph <= MAX_DOLLARS_PER_HOUR:
             chosen = off; chosen["_dph"] = dph; break
     if chosen is None:
         cheapest = min(offers, key=lambda o: float(o.get("dph_total", 999)))
-        fail(f"no offer under ${MAX_DOLLARS_PER_HOUR}/hr; cheapest is ${cheapest.get('dph_total')}/hr")
+        fail(f"no offer in [${MIN_DOLLARS_PER_HOUR}, ${MAX_DOLLARS_PER_HOUR}]/hr; cheapest is ${cheapest.get('dph_total')}/hr")
 
     offer_id = chosen["id"]
     print(f"chosen offer={offer_id}  ${chosen['_dph']}/hr  "
