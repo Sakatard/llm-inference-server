@@ -64,27 +64,34 @@ python3 -c 'import torch; print("torch:", torch.__version__, "cuda_avail:", torc
 echo "[setup] apt deps"
 apt-get update -qq && apt-get install -y -qq git aria2 2>&1 | tail -3
 
-echo "[setup] pip install unsloth (drop [cu124-torch260] extra — mutex hf-extras conflict in 2026.5.x)"
+echo "[setup] pip install unsloth (no composite extra; let pip resolve compatible torchao)"
 pip install --quiet --upgrade pip
 pip install --quiet "unsloth==2026.5.2" 2>&1 | tail -3
-pip install --quiet "torchao<0.13" hf_transfer safetensors 2>&1 | tail -3
+pip install --quiet hf_transfer safetensors 2>&1 | tail -3
 
-echo "[setup] verify"
+echo "[setup] verify all imports up front (catches Unsloth/torch ABI breakage early)"
 python3 -c 'import torch; assert torch.cuda.is_available(); print("torch:", torch.__version__, "GPU:", torch.cuda.get_device_name(0))'
-python3 -c 'import unsloth; print("unsloth:", unsloth.__version__)' 2>&1 | tail -2
+python3 -c 'import unsloth, transformers, peft, trl, datasets, bitsandbytes; print("unsloth:", unsloth.__version__, "transformers:", transformers.__version__, "trl:", trl.__version__)' \
+  > /workspace/phase4_imports.log 2>&1
+IRC=$?
+cat /workspace/phase4_imports.log
+if [ $IRC -ne 0 ]; then
+    echo "[setup] IMPORT SMOKE FAIL rc=$IRC — aborting before train"
+    exit 11
+fi
 
-# hf_transfer is faster but the C extension has no retry/timeout — a single
-# stalled shard hangs forever (observed: prior run stuck 1 hr at 12/13 shards).
-# Default huggingface_hub transport is slower but auto-retries on broken stream.
-# Re-enable only after upstream fixes the hang.
+# hf_transfer C extension has no retry/timeout — single stalled shard hangs.
+# Default huggingface_hub auto-retries; re-enable only after upstream fix.
 export HF_HUB_ENABLE_HF_TRANSFER=0
 export HF_HUB_DOWNLOAD_TIMEOUT=60
 export TOKENIZERS_PARALLELISM=false
 
-echo "[train] phase4_train.py"
-python3 /workspace/phase4_train.py --work-dir /workspace 2>&1 | tee /workspace/phase4_train.log
+echo "[train] phase4_train.py (log → /workspace/phase4_train.log; redirect not piped so file is created even on early crash)"
+python3 -u /workspace/phase4_train.py --work-dir /workspace > /workspace/phase4_train.log 2>&1
 TRAIN_RC=$?
 echo "[train] exit=$TRAIN_RC"
+echo "=== last 80 lines of phase4_train.log ==="
+tail -80 /workspace/phase4_train.log 2>&1
 ls -la /workspace/output/ 2>&1 | head -20
 
 if [ $TRAIN_RC -eq 0 ] && [ -d /workspace/output/merged ]; then
