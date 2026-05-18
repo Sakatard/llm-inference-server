@@ -12,9 +12,10 @@ services:
     environment:
       - IDLE_TIMEOUT=1200
       - ENABLE_MTP=1
-      - MTP_MODEL_PATH=/models/Qwen3.6-27B-Trader-IQ4_XS.gguf
-      - MTP_DRAFT_N_MAX=3
+      - MTP_MODEL_PATH=/models/Qwen3.6-27B-IQ4_XS.gguf
+      - MTP_DRAFT_N_MAX=2
       - MTP_CACHE_TYPE=turbo4
+      - DECODE_ENGINE=dflash
     deploy:
       resources:
         reservations:
