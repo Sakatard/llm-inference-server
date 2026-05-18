@@ -1,33 +1,9 @@
-From a9a8ddf3664caac6dd31c65afe5166199a8ff04b Mon Sep 17 00:00:00 2001
-From: build <build@local>
-Date: Sat, 16 May 2026 14:51:03 +0800
-Subject: [PATCH 04/10] phase0g: add LLAMA_DFLASH build option +
- --decode-engine CLI flag
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
+From 8bd0102f2d05c1cd147560855d8f603b0b4880b4 Mon Sep 17 00:00:00 2001
+From: Sakatard <Sakatard@me.com>
+Date: Mon, 18 May 2026 21:42:07 +0800
+Subject: [PATCH 4/9] 
+ 0004-phase0g-add-LLAMA_DFLASH-build-option-decode-engine-.patch
 
-CMakeLists.txt:
-  - new option LLAMA_DFLASH (default OFF)
-  - when ON: includes vendor/lucebox-hub/dflash/SAKATARD_INTEGRATION.cmake
-    after tools/ subdir, then links dflash27b_iface into llama-server with
-    LLAMA_HAS_DFLASH=1 compile definition.
-
-common/common.h:
-  - new field common_params::decode_engine ("legacy" | "dflash")
-
-common/arg.cpp:
-  - new CLI flag --decode-engine ENGINE; validates legacy|dflash; LLAMA_ARG_DECODE_ENGINE env.
-  - Exposed to SERVER, CLI, SPECULATIVE examples.
-
-Remaining wire-up (last mile of Phase 0g):
-  - tools/server/server-context.cpp: dispatch llama_decode → dflash::decode_batch
-    when params.decode_engine == "dflash" AND LLAMA_HAS_DFLASH defined.
-  - Need to read dflash's public API surface to identify decode entry point
-    (likely dflash::DFlashContext::create + decode_batch from
-    common/dflash_spec_decode.h).
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 ---
  CMakeLists.txt  | 19 +++++++++++++++++++
  common/arg.cpp  | 12 ++++++++++++
@@ -35,10 +11,10 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
  3 files changed, 35 insertions(+)
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 244f4cb49..8e25248d6 100644
+index d6d6bb0e..822bf153 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -117,6 +117,9 @@ option(LLAMA_TESTS_INSTALL          "llama: install tests"
+@@ -127,6 +127,9 @@ option(LLAMA_TESTS_INSTALL          "llama: install tests"
  option(LLAMA_OPENSSL    "llama: use openssl to support HTTPS" ON)
  option(LLAMA_LLGUIDANCE "llama-common: include LLGuidance library for structured output in common utils" OFF)
  
@@ -48,7 +24,7 @@ index 244f4cb49..8e25248d6 100644
  
  # Required for relocatable CMake package
  include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/build-info.cmake)
-@@ -216,6 +219,22 @@ if (LLAMA_BUILD_COMMON AND LLAMA_BUILD_TOOLS)
+@@ -226,6 +229,22 @@ if (LLAMA_BUILD_COMMON AND LLAMA_BUILD_TOOLS)
      add_subdirectory(tools)
  endif()
  
@@ -72,7 +48,7 @@ index 244f4cb49..8e25248d6 100644
  file(GLOB EXTRA_LICENSES "${CMAKE_SOURCE_DIR}/licenses/LICENSE-*")
  
 diff --git a/common/arg.cpp b/common/arg.cpp
-index 664371562..385e4b934 100644
+index 5e1b549b..2d7abacb 100644
 --- a/common/arg.cpp
 +++ b/common/arg.cpp
 @@ -2075,6 +2075,18 @@ common_params_context common_params_parser_init(common_params & params, llama_ex
@@ -95,7 +71,7 @@ index 664371562..385e4b934 100644
          {"--hellaswag"},
          "compute HellaSwag score over random tasks from datafile supplied with -f",
 diff --git a/common/common.h b/common/common.h
-index dda4973bb..d8553e1f3 100644
+index 1d3d788b..5034e306 100644
 --- a/common/common.h
 +++ b/common/common.h
 @@ -560,6 +560,10 @@ struct common_params {

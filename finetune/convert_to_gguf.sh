@@ -20,7 +20,7 @@ set -euo pipefail
 MERGED_DIR=${1:-/workspace/output/merged}
 OUT_DIR=${2:-/workspace/output/gguf}
 LLAMA_DIR=${LLAMA_DIR:-/workspace/llama.cpp}
-UPSTREAM_SHA=${UPSTREAM_SHA:-253ba110bcd372207ca7b0bb56f1ea10d60d53fd}
+UPSTREAM_SHA=${UPSTREAM_SHA:-a135ec0baa1bcf7eb0437c9fd04920f87cf33ace}
 PATCHES_DIR=${PATCHES_DIR:-/workspace/patches/llama-cpp}
 
 mkdir -p "$OUT_DIR"
@@ -34,17 +34,11 @@ git fetch --depth 50 origin || true
 git checkout "$UPSTREAM_SHA"
 git reset --hard "$UPSTREAM_SHA"
 
-# Apply the TurboQuant + MTP base patch so convert_hf_to_gguf.py knows about
-# Qwen3.5/3.6's qwen35 arch + nextn_predict_layers tensor naming. Without this
-# patch the upstream converter silently drops mtp.* tensors and the resulting
-# GGUF fails to load as MTP context.
-if [ -f "$PATCHES_DIR/0001-turboquant-mtp-base.patch" ]; then
-    echo "[gguf] applying 0001-turboquant-mtp-base.patch"
-    git apply --whitespace=nowarn "$PATCHES_DIR/0001-turboquant-mtp-base.patch"
-else
-    echo "[gguf] FAIL: $PATCHES_DIR/0001-turboquant-mtp-base.patch missing — convert would drop MTP"
-    exit 2
-fi
+# Upstream (pin a135ec0baa1b) now ships native MTP support via PR #22673 +
+# fixes #23198/#23237. convert_hf_to_gguf.py handles mtp.* → blk.N.nextn.*
+# remapping and emits nextn_predict_layers metadata natively. No patch needed.
+# (Keep 0001-turboquant-base.patch in the tree but don't apply it here — it's
+# only needed for the runtime container, not the converter.)
 
 echo "[gguf] $(date +%T) install convert deps"
 for f in requirements/requirements-convert_hf_to_gguf.txt; do

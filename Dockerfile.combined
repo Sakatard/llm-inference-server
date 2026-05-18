@@ -11,12 +11,13 @@ ENV IVY_CFLAGS="-march=x86-64 -msse4.2 -mavx -mno-avx2 -mno-fma -mno-avx512f -mn
 
 # --- Build llama.cpp (upstream + local patch series) ---
 # See main Dockerfile for full strategy notes. Summary: clone upstream
-# ggml-org/llama.cpp at the merge-base SHA, apply patches/llama-cpp/0001 to
-# reach the TurboQuant+MTP base (= former Sakatard fork tip c85252627), clone
-# Luce-Org/lucebox-hub at its pinned SHA into vendor/lucebox-hub/, then apply
-# 0002–0010 (Phase 0g/0h dflash compile+link+bridge + Pascal CUDA fix).
+# ggml-org/llama.cpp at the pinned SHA, apply patches/llama-cpp/0001
+# (TurboQuant-only — MTP/Qwen35 dropped, now upstream via PR #22673 + fixes),
+# clone Luce-Org/lucebox-hub at its pinned SHA into vendor/lucebox-hub/, then
+# apply 0002–0006 + 0008–0010 (Phase 0g/0h dflash compile+link+bridge +
+# Pascal CUDA fix; 0007 dropped — was lucebox LFS symlink fixup, now no-op).
 ARG LLAMA_UPSTREAM_URL=https://github.com/ggml-org/llama.cpp.git
-ARG LLAMA_UPSTREAM_SHA=253ba110bcd372207ca7b0bb56f1ea10d60d53fd
+ARG LLAMA_UPSTREAM_SHA=a135ec0baa1bcf7eb0437c9fd04920f87cf33ace
 ARG LUCEBOX_URL=https://github.com/Luce-Org/lucebox-hub.git
 ARG LUCEBOX_SHA=6fe0d9a0a
 WORKDIR /build/llama.cpp
@@ -27,7 +28,7 @@ RUN git init -q . && \
     test "$(git rev-parse HEAD)" = "$LLAMA_UPSTREAM_SHA"
 
 COPY patches/llama-cpp/ /build/patches/llama-cpp/
-RUN git apply --whitespace=nowarn /build/patches/llama-cpp/0001-turboquant-mtp-base.patch
+RUN git apply --whitespace=nowarn /build/patches/llama-cpp/0001-turboquant-base.patch
 RUN git clone "$LUCEBOX_URL" vendor/lucebox-hub && \
     git -C vendor/lucebox-hub checkout -q "$LUCEBOX_SHA" && \
     rm -rf vendor/lucebox-hub/.git
@@ -36,7 +37,6 @@ RUN for p in /build/patches/llama-cpp/0002-*.patch \
               /build/patches/llama-cpp/0004-*.patch \
               /build/patches/llama-cpp/0005-*.patch \
               /build/patches/llama-cpp/0006-*.patch \
-              /build/patches/llama-cpp/0007-*.patch \
               /build/patches/llama-cpp/0008-*.patch \
               /build/patches/llama-cpp/0009-*.patch \
               /build/patches/llama-cpp/0010-*.patch; do \

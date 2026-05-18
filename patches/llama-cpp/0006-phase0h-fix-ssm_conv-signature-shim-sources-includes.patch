@@ -1,48 +1,19 @@
-From 6aa9fd4873b74caf8e37e8944413a508af90109c Mon Sep 17 00:00:00 2001
-From: build <build@local>
-Date: Sat, 16 May 2026 15:22:29 +0800
-Subject: [PATCH 06/10] =?UTF-8?q?phase0h:=20fix=20ssm=5Fconv=20signature?=
- =?UTF-8?q?=20+=20shim=20sources/includes=20=E2=80=94=20clean=20Pascal=20b?=
- =?UTF-8?q?uild?=
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
+From 2c4276db9997e8da220d4a44b6b75d2ff3c14f77 Mon Sep 17 00:00:00 2001
+From: Sakatard <Sakatard@me.com>
+Date: Mon, 18 May 2026 21:43:13 +0800
+Subject: [PATCH 6/9] 
+ 0006-phase0h-fix-ssm_conv-signature-shim-sources-includes.patch
 
-ggml/src/ggml-cuda/ssm-conv.cu:
-  Restore Sakatard's 4-param signature (added bias_add_node) lost when I
-  wholesale-copied lucebox's 3-param impl. Param is ignored by lucebox path
-  but caller in ggml-cuda.cu uses 4-arg form for fusion paths.
-
-vendor/lucebox-hub/dflash/SAKATARD_INTEGRATION.cmake:
-  - Source list: fix qwen35_target_loader → gguf_target_loader, add
-    qwen35_backend.cpp + graph_builders.cpp (header deps)
-  - Includes: DFLASH_ROOT/include (dflash27b.h), DFLASH_SRC/{qwen35,common}
-    (step_graph.h etc), CUDAToolkit_INCLUDE_DIRS (cuda_runtime.h)
-  - enable_language(CUDA) — needed because shim creates a new target with .cu
-    sources, and root project() only enabled C/CXX. Activates _CMAKE_CUDA_*
-    internal variables that the build needs.
-
-Build verification:
-  docker nvidia/cuda:12.8.0-devel-ubuntu24.04 + sm_61 +
-  -DLLAMA_DFLASH=ON -DLLAMA_BUILD_SERVER=ON  →  build_rc=0,
-  bin/llama-server = 65 MB, contains LlamaToDFlashTarget vtable +
-  --decode-engine CLI flag.
-
-Phase 0h milestone: compile + link integration DONE. Server request-side
-dispatch (replace llama_decode with run_dflash_spec_decode for trader
-route) remains as wire-up work — bridge is ready when that code is added.
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 ---
  ggml/src/ggml-cuda/ssm-conv.cu                |  5 ++++-
  .../dflash/SAKATARD_INTEGRATION.cmake         | 21 ++++++++++++++++---
  2 files changed, 22 insertions(+), 4 deletions(-)
 
 diff --git a/ggml/src/ggml-cuda/ssm-conv.cu b/ggml/src/ggml-cuda/ssm-conv.cu
-index e6ce26f72..7b509f5ae 100644
+index fd55368a..2ef95663 100644
 --- a/ggml/src/ggml-cuda/ssm-conv.cu
 +++ b/ggml/src/ggml-cuda/ssm-conv.cu
-@@ -244,7 +244,10 @@ static void ssm_conv_f32_cuda(const float * src0, const float * src1, const int
+@@ -245,7 +245,10 @@ static void ssm_conv_f32_cuda(const float * src0, const float * src1, const int
      }
  }
  
@@ -55,7 +26,7 @@ index e6ce26f72..7b509f5ae 100644
      const struct ggml_tensor * src1 = dst->src[1];  // conv1d.weight
      // dflash27b_ggml: optional src[2] = parent_ids (i32) enables tree mode
 diff --git a/vendor/lucebox-hub/dflash/SAKATARD_INTEGRATION.cmake b/vendor/lucebox-hub/dflash/SAKATARD_INTEGRATION.cmake
-index 0ff5e146a..9a7f5598b 100644
+index 0ff5e146..9a7f5598 100644
 --- a/vendor/lucebox-hub/dflash/SAKATARD_INTEGRATION.cmake
 +++ b/vendor/lucebox-hub/dflash/SAKATARD_INTEGRATION.cmake
 @@ -32,14 +32,23 @@

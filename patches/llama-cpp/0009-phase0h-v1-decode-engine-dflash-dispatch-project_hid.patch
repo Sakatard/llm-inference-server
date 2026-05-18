@@ -1,35 +1,16 @@
-From 720ba87ce154aa7fe013eb4f76a88e75f7f15055 Mon Sep 17 00:00:00 2001
-From: build <build@local>
-Date: Sat, 16 May 2026 16:06:24 +0800
-Subject: [PATCH 09/10] phase0h v1: --decode-engine dflash dispatch +
- project_hidden stub
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
+From 5eaf011931f1d8f3ffa077b9c0c6f3490cb9a41d Mon Sep 17 00:00:00 2001
+From: Sakatard <Sakatard@me.com>
+Date: Mon, 18 May 2026 21:43:31 +0800
+Subject: [PATCH 8/9] 
+ 0009-phase0h-v1-decode-engine-dflash-dispatch-project_hid.patch
 
-tools/server/server.cpp:
-  At server init, log Phase 0h status when --decode-engine dflash is requested.
-  Confirms LLAMA_HAS_DFLASH=1 build present, LlamaToDFlashTarget bridge linked,
-  notes v1 dispatch TODO. Currently falls through to standard llama_decode path.
-
-tools/server/llama_dflash_bridge.cpp:
-  LlamaToDFlashTarget::project_hidden_to_tokens — return mask_token_id for
-  every position instead of zero. Causes dflash verify_batch to reject the
-  drafter's predictions cleanly → spec-decode falls through to AR on target.
-  Functional but no speedup until v2 builds the real lm_head graph.
-
-Build verified on ubuntu22.04 (glibc 2.35) for prod container compatibility:
-  bin/llama-server = 65,599,616 bytes, --decode-engine flag in --help,
-  startup logs confirm Phase 0h dispatch path on flag.
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 ---
  tools/server/llama_dflash_bridge.cpp | 19 ++++++++++---------
  tools/server/server.cpp              | 17 +++++++++++++++++
  2 files changed, 27 insertions(+), 9 deletions(-)
 
 diff --git a/tools/server/llama_dflash_bridge.cpp b/tools/server/llama_dflash_bridge.cpp
-index 7bea9ef1f..3404e1543 100644
+index 7bea9ef1..3404e154 100644
 --- a/tools/server/llama_dflash_bridge.cpp
 +++ b/tools/server/llama_dflash_bridge.cpp
 @@ -131,16 +131,17 @@ bool LlamaToDFlashTarget::embed_tokens(const int32_t * tokens, int n,
@@ -60,10 +41,10 @@ index 7bea9ef1f..3404e1543 100644
  }
  
 diff --git a/tools/server/server.cpp b/tools/server/server.cpp
-index 823ae5bda..28d4ef83c 100644
+index c82f1179..af528ca5 100644
 --- a/tools/server/server.cpp
 +++ b/tools/server/server.cpp
-@@ -109,6 +109,23 @@ int main(int argc, char ** argv) {
+@@ -112,6 +112,23 @@ int main(int argc, char ** argv) {
          params.model_alias.insert(params.model.name);
      }
  

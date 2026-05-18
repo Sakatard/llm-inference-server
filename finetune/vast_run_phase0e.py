@@ -31,7 +31,7 @@ DISK_GB = 300  # bumped from 200 per consensus: fp16 GGUF ≈ full fp16 size for
 # against Sakatard/llama-cpp-turboquant @ c85252627; fork removed, kept here for
 # reproducibility — upstream + patches/llama-cpp/0001 yields the equivalent tree.
 LLAMA_CPP_REPO = "https://github.com/ggml-org/llama.cpp.git"
-LLAMA_CPP_SHA = "253ba110bcd372207ca7b0bb56f1ea10d60d53fd"
+LLAMA_CPP_SHA = "a135ec0baa1bcf7eb0437c9fd04920f87cf33ace"
 
 REPO_DIR = Path(__file__).parent
 SMOKE_SCRIPT = REPO_DIR / "phase0e_smoke.py"

@@ -30,7 +30,7 @@ DISK_GB = 300
 # Fork removed; for re-run, transfer ../patches/llama-cpp/ to /workspace and apply
 # 0001-turboquant-mtp-base.patch on top of upstream after clone+checkout.
 LLAMA_CPP_REPO = "https://github.com/ggml-org/llama.cpp.git"
-LLAMA_CPP_SHA = "253ba110bcd372207ca7b0bb56f1ea10d60d53fd"
+LLAMA_CPP_SHA = "a135ec0baa1bcf7eb0437c9fd04920f87cf33ace"
 
 REPO_DIR = Path(__file__).parent
 SMOKE_SCRIPT = REPO_DIR / "phase0f_smoke.py"

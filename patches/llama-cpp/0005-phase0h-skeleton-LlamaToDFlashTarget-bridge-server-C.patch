@@ -1,7 +1,7 @@
-From d6f7da9d117c65fcda531d3f970a668139f307fb Mon Sep 17 00:00:00 2001
+From 07161e7d5eb65cce6dc601469a67ae691f5b6fa3 Mon Sep 17 00:00:00 2001
 From: build <build@local>
 Date: Sat, 16 May 2026 15:00:44 +0800
-Subject: [PATCH 05/10] phase0h: skeleton LlamaToDFlashTarget bridge + server
+Subject: [PATCH 5/9] phase0h: skeleton LlamaToDFlashTarget bridge + server
  CMake hook
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -43,7 +43,7 @@ Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
  create mode 100644 tools/server/llama_dflash_bridge.h
 
 diff --git a/tools/server/CMakeLists.txt b/tools/server/CMakeLists.txt
-index 2d628704b..238bb13e8 100644
+index 57d3e871..b62b95ac 100644
 --- a/tools/server/CMakeLists.txt
 +++ b/tools/server/CMakeLists.txt
 @@ -40,6 +40,15 @@ set(TARGET_SRCS
@@ -59,12 +59,12 @@ index 2d628704b..238bb13e8 100644
 +    )
 +endif()
 +
- # Option to specify custom HF bucket for webui (defaults to llama-ui)
- # Usage: cmake -B build -DLLAMA_WEBUI_HF_BUCKET=llama-ui
- set(LLAMA_WEBUI_HF_BUCKET "llama-ui" CACHE STRING "Hugging Face bucket name for prebuilt webui assets")
+ add_executable(${TARGET} ${TARGET_SRCS})
+ install(TARGETS ${TARGET} RUNTIME)
+ 
 diff --git a/tools/server/llama_dflash_bridge.cpp b/tools/server/llama_dflash_bridge.cpp
 new file mode 100644
-index 000000000..74ab717f4
+index 00000000..74ab717f
 --- /dev/null
 +++ b/tools/server/llama_dflash_bridge.cpp
 @@ -0,0 +1,168 @@
@@ -238,7 +238,7 @@ index 000000000..74ab717f4
 +#endif // LLAMA_HAS_DFLASH
 diff --git a/tools/server/llama_dflash_bridge.h b/tools/server/llama_dflash_bridge.h
 new file mode 100644
-index 000000000..6fbb0dca5
+index 00000000..6fbb0dca
 --- /dev/null
 +++ b/tools/server/llama_dflash_bridge.h
 @@ -0,0 +1,76 @@

@@ -1,41 +1,19 @@
-From 539aa3813bdddae8c67aae77cee087b9804e72a2 Mon Sep 17 00:00:00 2001
-From: build <build@local>
-Date: Sat, 16 May 2026 15:46:12 +0800
-Subject: [PATCH 08/10] phase0h v1: real llama_model_embed_input_tokens API +
- wire bridge
+From 733551019e3e88e60be3d888059ce8d66bb8b02e Mon Sep 17 00:00:00 2001
+From: Sakatard <Sakatard@me.com>
+Date: Mon, 18 May 2026 21:43:31 +0800
+Subject: [PATCH 7/9] 
+ 0008-phase0h-v1-real-llama_model_embed_input_tokens-API-w.patch
 
-include/llama.h:
-  New LLAMA_API llama_model_embed_input_tokens(model, tokens, n, out).
-  Output: [n_tokens * n_embd] f32. Returns 0/non-zero status.
-
-src/llama-model.cpp:
-  Implementation: ggml_backend_tensor_get rows from model.tok_embd, convert
-  to f32. Supports F32, F16, BF16. Quantized types return error 4 (v2 will
-  add per-block dequant if needed).
-
-tools/server/llama_dflash_bridge.cpp:
-  LlamaToDFlashTarget::embed_tokens replaces zero-fill stub with real API call.
-  dflash drafter now gets actual target embeddings instead of zeros.
-
-Build verified clean: build_rc=0, bin/llama-server = 65,307,912 bytes
-(+120 over previous build for new API).
-
-Remaining Phase 0h v1 work:
-  - project_hidden_to_tokens (needs ggml graph for output_norm + lm_head)
-  - feature capture from intermediate target layers (custom llama_decode hook)
-  - server-context.cpp decode-engine dispatch
-  - Dockerfile bump (LLAMA_DFLASH=ON)
-  - P40 deploy + bench vs Phase 0c 18.48 tok/s baseline
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 ---
- include/llama.h                      | 10 +++++
- src/llama-model.cpp                  | 56 ++++++++++++++++++++++++++++
- tools/server/llama_dflash_bridge.cpp | 17 +++------
- 3 files changed, 72 insertions(+), 11 deletions(-)
+ include/llama.h                          | 10 +++++
+ src/llama-model.cpp                      | 56 ++++++++++++++++++++++++
+ tools/server/llama_dflash_bridge.cpp     | 17 +++----
+ vendor/lucebox-hub/dflash/deps/llama.cpp |  1 +
+ 4 files changed, 73 insertions(+), 11 deletions(-)
+ create mode 120000 vendor/lucebox-hub/dflash/deps/llama.cpp
 
 diff --git a/include/llama.h b/include/llama.h
-index 52eb21246..279c953b4 100644
+index 52eb2124..279c953b 100644
 --- a/include/llama.h
 +++ b/include/llama.h
 @@ -564,6 +564,16 @@ extern "C" {
@@ -56,10 +34,10 @@ index 52eb21246..279c953b4 100644
      LLAMA_API float llama_model_rope_freq_scale_train(const struct llama_model * model);
  
 diff --git a/src/llama-model.cpp b/src/llama-model.cpp
-index 960e07861..cd62d2222 100644
+index 8bf20a71..fb8b8674 100644
 --- a/src/llama-model.cpp
 +++ b/src/llama-model.cpp
-@@ -2145,6 +2145,62 @@ int32_t llama_model_n_embd(const llama_model * model) {
+@@ -2158,6 +2158,62 @@ int32_t llama_model_n_embd(const llama_model * model) {
      return model->hparams.n_embd;
  }
  
@@ -123,7 +101,7 @@ index 960e07861..cd62d2222 100644
      return model->hparams.n_embd_inp();
  }
 diff --git a/tools/server/llama_dflash_bridge.cpp b/tools/server/llama_dflash_bridge.cpp
-index 74ab717f4..7bea9ef1f 100644
+index 74ab717f..7bea9ef1 100644
 --- a/tools/server/llama_dflash_bridge.cpp
 +++ b/tools/server/llama_dflash_bridge.cpp
 @@ -120,17 +120,12 @@ bool LlamaToDFlashTarget::is_eos(int token) const {
@@ -150,6 +128,14 @@ index 74ab717f4..7bea9ef1f 100644
  }
  
  bool LlamaToDFlashTarget::project_hidden_to_tokens(const float * hidden,
+diff --git a/vendor/lucebox-hub/dflash/deps/llama.cpp b/vendor/lucebox-hub/dflash/deps/llama.cpp
+new file mode 120000
+index 00000000..11a54ed3
+--- /dev/null
++++ b/vendor/lucebox-hub/dflash/deps/llama.cpp
+@@ -0,0 +1 @@
++../../../../
+\ No newline at end of file
 -- 
 2.43.0
 

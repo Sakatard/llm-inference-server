@@ -1,45 +1,16 @@
-From 5d7aae248623fd469e15a0bfb6331e81e9326732 Mon Sep 17 00:00:00 2001
-From: build <build@local>
-Date: Sat, 16 May 2026 16:35:58 +0800
-Subject: [PATCH 10/10] =?UTF-8?q?phase0h=20v2:=20revert=20lucebox=20CUDA?=
- =?UTF-8?q?=20kernel=20wholesale-copy=20=E2=80=94=20fixes=20Pascal=20regre?=
- =?UTF-8?q?ssion?=
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
+From fd8bf6d708131f33c671dc50d4b724eaba31075b Mon Sep 17 00:00:00 2001
+From: Sakatard <Sakatard@me.com>
+Date: Mon, 18 May 2026 21:43:31 +0800
+Subject: [PATCH 9/9] 
+ 0010-phase0h-v2-revert-lucebox-CUDA-kernel-wholesale-copy.patch
 
-DIAGNOSIS: Phase 0g's wholesale-copy of lucebox's gated_delta_net.cu +
-ssm-conv.cu introduced kernel template instantiations whose nbytes_shared
-exceeds Pascal sm_61's 48 KB per-block shared memory limit. cudaFuncSetAttribute
-in mmq.cuh:3955 (CUDA_SET_SHARED_MEMORY_LIMIT) failed with 'illegal memory
-access' at module init.
-
-EMPIRICAL EVIDENCE:
-  - Production llama-server (Sakatard fork @ f5fd4ecad, no lucebox): runs
-    fine at 18.48 tok/s decode on P40 (Phase 0c bench)
-  - Phase 0g+0h binary with lucebox kernels: crashes mmq.cuh on first decode
-  - LLAMA_DFLASH=OFF didn't help — same crash → not dflash linkage related
-  - Revert ggml-cuda kernels to feature/mtp-turboquant-integration HEAD
-    → builds + runs clean at 21.62 tok/s decode, 66% MTP draft acceptance
-
-KEEP:
-  - ggml/include/ggml.h: GGML_TYPE_TQ3_0 stub + 3 tree-op decls
-  - ggml/src/ggml.c: 3 tree-op wrapper impls (set src[2/6/7] on result tensor)
-  - These compile cleanly + don't break Pascal; tree-mode silently disabled
-    at runtime since reverted CUDA kernels don't check src[2/6/7].
-
-PHASE 0h v2 PIVOT: for proper tree-mode support, need surgical kernel diff
-merge (~1-2 days of careful CUDA work) NOT wholesale copy. Deferred to v3.
-v0 ship continues with non-tree MTP self-spec-decode (Phase 0c-proven).
-
-Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
 ---
  ggml/src/ggml-cuda/gated_delta_net.cu | 255 +++++++-------------------
  ggml/src/ggml-cuda/ssm-conv.cu        | 155 +++-------------
  2 files changed, 92 insertions(+), 318 deletions(-)
 
 diff --git a/ggml/src/ggml-cuda/gated_delta_net.cu b/ggml/src/ggml-cuda/gated_delta_net.cu
-index ded13ee1b..b4c9845e7 100644
+index ded13ee1..b4c9845e 100644
 --- a/ggml/src/ggml-cuda/gated_delta_net.cu
 +++ b/ggml/src/ggml-cuda/gated_delta_net.cu
 @@ -1,32 +1,6 @@
@@ -407,7 +378,7 @@ index ded13ee1b..b4c9845e7 100644
 -    #undef GDN_LAUNCH
  }
 diff --git a/ggml/src/ggml-cuda/ssm-conv.cu b/ggml/src/ggml-cuda/ssm-conv.cu
-index 7b509f5ae..4841389fb 100644
+index 2ef95663..4c4daf85 100644
 --- a/ggml/src/ggml-cuda/ssm-conv.cu
 +++ b/ggml/src/ggml-cuda/ssm-conv.cu
 @@ -3,6 +3,7 @@
@@ -587,7 +558,7 @@ index 7b509f5ae..4841389fb 100644
          }
      };
  
-@@ -245,15 +149,17 @@ static void ssm_conv_f32_cuda(const float * src0, const float * src1, const int
+@@ -246,15 +150,17 @@ static void ssm_conv_f32_cuda(const float * src0, const float * src1, const int
  }
  
  void ggml_cuda_op_ssm_conv(ggml_backend_cuda_context & ctx, ggml_tensor * dst, ggml_tensor * bias_add_node, ggml_tensor * silu_dst) {
@@ -610,7 +581,7 @@ index 7b509f5ae..4841389fb 100644
      // When fusing, write to silu_dst (the node downstream references).
      const struct ggml_tensor * out = fuse_silu ? silu_dst : dst;
  
-@@ -269,34 +175,23 @@ void ggml_cuda_op_ssm_conv(ggml_backend_cuda_context & ctx, ggml_tensor * dst, g
+@@ -270,34 +176,23 @@ void ggml_cuda_op_ssm_conv(ggml_backend_cuda_context & ctx, ggml_tensor * dst, g
  
      const float * src0_d = (const float *) src0->data;
      const float * src1_d = (const float *) src1->data;
