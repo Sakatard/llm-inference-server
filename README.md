@@ -26,7 +26,7 @@ local model. Idle-aware, no API keys, no per-request fees.
 
 | Model | Route | Notes |
 |-------|-------|-------|
-| Qwen 3.6 27B | `/v1/chat/completions` (default) | MTP self-speculative + turbo4 KV; ~20 tok/s decode on P40 |
+| Qwen 3.6 27B | `/v1/chat/completions` (default) | MTP self-speculative + turbo4 KV; ~23.7 tok/s decode on P40 |
 | Qwen 3.5 0.8B + mmproj | `/v1/transcribe` | Multimodal vision/audio transcription |
 | Whisper large-v3-turbo | `/v1/audio/transcriptions` | C++ inference via whisper.cpp |
 | TimesFM 2.5 | `/v1/forecast` | PyTorch, cold-starts slower than warm path |
@@ -102,11 +102,17 @@ that aren't (yet) in mainline:
 
 | Patch | Adds |
 |-------|------|
-| `0001-turboquant-mtp-base.patch` | TurboQuant turbo3/turbo4 KV cache + MTP self-speculative (PR #22673), ~26k LoC squashed |
+| `0001-turboquant-base.patch` | TurboQuant turbo2/turbo3/turbo4 KV cache types + TQ4_1S weight quant + fattn-vec turbo template instances + Q pre-rotation in `llama-graph.cpp` (~26k LoC) |
 | `0002` | Pre-rotated turbo type registration in the dflash qwen35 target graph |
 | `0003` | Tree-op ggml extensions (`ggml_ssm_conv_tree`, `ggml_gated_delta_net_tree`) + lucebox integration shim |
 | `0004` | `LLAMA_DFLASH=ON` build option + `--decode-engine` CLI flag |
-| `0005..0010` | `LlamaToDFlashTarget` bridge, server CMake hook, `llama_model_embed_input_tokens` public API, Pascal sm_61 CUDA fixes |
+| `0005, 0006, 0008, 0009, 0010` | `LlamaToDFlashTarget` bridge, server CMake hook, `llama_model_embed_input_tokens` public API, Pascal sm_61 CUDA fixes |
+
+`0007` was a lucebox-LFS-symlink fixup; dropped because the fresh vendor
+clone at the pinned SHA already has the symlink. MTP self-speculative
+decoding now ships natively in upstream llama.cpp via [PR #22673](
+https://github.com/ggml-org/llama.cpp/pull/22673) + fixes #23198/#23237,
+so the prior MTP hunks in `0001` were dropped on the rebase.
 
 Between `0001` and `0002`, the build clones
 [`Luce-Org/lucebox-hub`](https://github.com/Luce-Org/lucebox-hub) at
@@ -133,13 +139,13 @@ the new mainline.
 | `IDLE_TIMEOUT` | `300` (compose: `1200`) | Seconds of inactivity before a model unloads |
 | `START_TIMEOUT` | `120` | Seconds to wait for a model's HTTP probe after spawn |
 | `PORT` | `8080` | In-container port (change the `8088:8080` mapping for host) |
-| `ENABLE_MTP` | `0` | When `1`, qwen route uses Qwen3.6 IQ4_XS + MTP draft (self-spec) |
-| `MTP_MODEL_PATH` | `/models/Qwen3.6-27B-IQ4_XS.gguf` | MTP-converted GGUF |
-| `MTP_DRAFT_N_MAX` | `3` | Max drafted tokens per step (1-16) |
+| `ENABLE_MTP` | `0` (compose: `1`) | When `1`, qwen route uses Qwen3.6 IQ4_XS + MTP draft (self-spec) |
+| `MTP_MODEL_PATH` | `/models/Qwen3.6-27B-IQ4_XS.gguf` | MTP-preserving GGUF (base or fine-tune that retained `blk.N.nextn.*` tensors) |
+| `MTP_DRAFT_N_MAX` | `2` | Max drafted tokens per step (1-16). P40 sweet spot is 2; ≥5 falls off cliff because Pascal lacks tensor cores so verify-batch cost exceeds draft savings. |
 | `MTP_DRAFT_P_MIN` | `0.0` | Acceptance probability floor for drafts |
 | `MTP_CACHE_TYPE` | `turbo4` | KV cache quant (`turbo4` / `q8_0` / `f16`) |
 | `MTP_CTX` | `65536` (turbo4) / `32768` (other) | Context window — auto-shrinks for unquantised caches |
-| `DECODE_ENGINE` | `dflash` | `legacy` (standard llama_decode) or `dflash` (links the dflash library + logs dispatch; current binary falls through to llama_decode — full spec-decode wiring is future work) |
+| `DECODE_ENGINE` | `dflash` | `legacy` or `dflash`. **Currently a no-op:** the dflash library links but its dispatch falls through to `llama_decode`. Real spec-decode wiring (`project_hidden_to_tokens` ggml graph + server-side dispatch) is Phase 0h v2 work. |
 
 To change anything, either set under `environment:` in
 `docker-compose.yaml` or pass at `docker compose run` time, then
@@ -149,13 +155,34 @@ To change anything, either set under `environment:` in
 
 ## Performance
 
-Bench on Tesla P40 (24 GB), Qwen 3.6 27B-IQ4_XS, 4075-token prompt + 256
-decoded:
+Bench on Tesla P40 (24 GB), Qwen 3.6 27B-IQ4_XS, 200-token decoded reply
+(3-sample average for the prod config; single-sample for earlier rows):
 
-| Build | Decode tok/s | vs baseline |
-|-------|--------------|-------------|
-| Non-MTP (Q4_K_M, turbo4) | 18.48 | 1.00× |
-| MTP + dflash bridge (IQ4_XS, draft-n=3, p_min=0.0, turbo4) | **20.03** | **+8.4%** |
+| Build | Decode tok/s | MTP accept | vs baseline |
+|-------|--------------|------------|-------------|
+| Non-MTP (Q4_K_M, turbo4) baseline | 18.48 | — | 1.00× |
+| Old pin + MTP + dflash bridge (IQ4_XS, N=3, turbo4) | 20.03 | (claimed) | +8.4% |
+| **New pin + native MTP (IQ4_XS, N=2, turbo4)** | **23.66** | **83.7%** | **+28.0%** |
+
+The +28% jump comes almost entirely from upstream's native MTP
+implementation in PR #22673 — our prior hand-rolled MTP hunks left
+the spec-decode path under-tuned, and the upstream version draws much
+higher acceptance on the same prompt distribution.
+
+Draft-N sweep on P40 (single-sample each; ±~1 tok/s noise):
+
+| `MTP_DRAFT_N_MAX` | tok/s | accept |
+|-------------------|-------|--------|
+| 1 | 20.24 | 88.6% |
+| **2** | **22.62** | **78.1%** ← sweet spot |
+| 3 | 18.25 | 66.0% |
+| 4 | 21.93 | 63.4% |
+| 5 | 20.94 | 58.6% |
+| 6 | 15.64 | 40.6% |
+| 8 | 17.45 | 35.4% |
+
+Pascal lacks tensor cores; verify-batch cost dominates draft savings
+once N ≥ 5. N=2 is robust on the prod build.
 
 Full dflash spec-decode dispatch + tree-mode CUDA kernels are not wired
 yet (the current build links the dflash library but logs + falls through
@@ -278,7 +305,7 @@ gating (or keep them — they cost negligible perf on newer cores).
 ├── Dockerfile                      # primary image
 ├── Dockerfile.combined             # qwen + whisper + timesfm in one build
 ├── Dockerfile.timesfm              # TimesFM-only image
-├── patches/llama-cpp/              # 10-patch series (TurboQuant + MTP + dflash)
+├── patches/llama-cpp/              # 9-patch series (TurboQuant + dflash; MTP now upstream)
 ├── artifacts/                      # deployable binaries
 ├── examples/                       # ready-to-run client scripts
 └── API.md                          # endpoint reference
@@ -290,7 +317,7 @@ gating (or keep them — they cost negligible perf on newer cores).
 
 - **[llama.cpp](https://github.com/ggml-org/llama.cpp)** — upstream C++ LLM inference
 - **[TheTom/llama-cpp-turboquant](https://github.com/TheTom/llama-cpp-turboquant)** — turbo3/turbo4 KV cache quantisation (squashed into patch 0001)
-- **[llama.cpp PR #22673](https://github.com/ggml-org/llama.cpp/pull/22673)** — MTP self-speculative decoding (squashed into patch 0001)
+- **[llama.cpp PR #22673](https://github.com/ggml-org/llama.cpp/pull/22673)** — MTP self-speculative decoding (now native upstream; previously squashed into our patch 0001)
 - **[Luce-Org/lucebox-hub](https://github.com/Luce-Org/lucebox-hub)** — dFlash speculative decode + DDTree verify (vendored at SHA `6fe0d9a0`)
 - **[whisper.cpp](https://github.com/ggerganov/whisper.cpp)** — Whisper inference
 - **[TimesFM](https://github.com/google-research/timesfm)** — Google Research time-series foundation model
