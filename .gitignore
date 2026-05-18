@@ -3,6 +3,7 @@ models/
 .rtk/
 
 # Phase 4+ fine-tune work environments
+.venv/
 .venv-hf/
 finetune/__pycache__/
 finetune/_remote_runner*.sh
@@ -12,3 +13,13 @@ artifacts/*.gguf
 __pycache__/
 *.pyc
 finetune/datasets/
+
+# Local-only patch backup (kept for rollback, not for remote)
+patches/llama-cpp.backup/
+
+# Phase 4 REVIEW artifacts — heavy stuff stays local; small summaries ok
+finetune/REVIEWS/*.log
+finetune/REVIEWS/phase4_*/adapter/
+finetune/REVIEWS/phase4_*/holdout_preds.jsonl
+finetune/REVIEWS/phase4_*/resume.log
+finetune/REVIEWS/phase4_*/phase4_train.log

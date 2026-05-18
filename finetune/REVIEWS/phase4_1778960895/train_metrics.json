@@ -1,0 +1,10 @@
+{
+  "train_elapsed_s": 1095.037888765335,
+  "train_loss": 1.9712340672810873,
+  "n_train": 76,
+  "n_holdout": 18,
+  "n_holdout_valid": 0,
+  "direction_acc": 0.0,
+  "brier": null,
+  "n_target_modules": 256
+}
