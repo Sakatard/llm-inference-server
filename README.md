@@ -185,6 +185,22 @@ N ≥ 3. N=2 dominates across every `p_min`. `p_min=0.5` is the cleanest
 choice at every N — early-rejecting weak drafts saves verify cost. The
 production build now ships `MTP_DRAFT_N_MAX=2`, `MTP_DRAFT_P_MIN=0.5`.
 
+`MTP_CACHE_TYPE` sweep at fixed N=2 / p_min=0.5 (3-sample average, same prompt):
+
+| cache | tok/s | accept | VRAM | notes |
+|-------|-------|--------|------|-------|
+| **`turbo4`** | **21.95** | **73.6%** | 19.0 GB | production |
+| `q8_0` | 8.95 | **0.0%** | 18.5 GB | breaks MTP — verifier rejects every draft, falls back to autoregressive |
+| `f16` | 21.23 | 69.3% | 20.6 GB | works but slower and +1.6 GB VRAM |
+
+`q8_0` + `--spec-type draft-mtp` produces 100% draft rejection on
+upstream `a135ec0baa1b` (Qwen3.6-27B-IQ4_XS, P40). The drafter still
+emits max-N drafts per step but `draft_n_accepted = 0` across the entire
+sweep, suggesting the q8_0 KV quant rounding diverges between the
+nextn head's projection and the verifier's KV read. P40 is not an
+upstream-supported target so we accept this as a config constraint: do
+not pair `MTP_CACHE_TYPE=q8_0` with MTP.
+
 Full dflash spec-decode dispatch + tree-mode CUDA kernels remain unwired
 and are de-prioritised: the dflash bridge would need a real
 `output_norm + lm_head` ggml graph (path B) plus a quantized-row dequant
