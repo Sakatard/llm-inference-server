@@ -13,17 +13,11 @@ ENV IVY_CFLAGS="-march=x86-64 -msse4.2 -mavx -mno-avx2 -mno-fma -mno-avx512f -mn
 
 # --- Build llama.cpp (upstream + local patch series) ---
 # Strategy: clone upstream ggml-org/llama.cpp at the pinned SHA, then apply
-# the patch series in patches/llama-cpp/. Patch 0001 is TurboQuant-only
-# (MTP/Qwen35 dropped — upstream merged native MTP via PR #22673 + fixes
-# #23198, #23237). 0002–0006 + 0008–0010 are Phase 0g/0h (dflash compile/link
-# + bridge + Pascal CUDA fix). 0007 dropped (was lucebox-hub LFS symlink
-# fixup — no-op against fresh vendor clone at pinned SHA). Lucebox-hub vendor
-# tree is fetched separately at its pinned SHA — Phase 0g/0h patches reference
-# vendor/lucebox-hub/dflash/* paths so the clone must happen before 0002+.
+# patches/llama-cpp/0001-turboquant-base.patch (TurboQuant turbo2/3/4 KV
+# cache + TQ4_1S weight quant + Q pre-rotation). Upstream merged native MTP
+# via PR #22673 + fixes #23198/#23237, so no extra MTP patch is needed.
 ARG LLAMA_UPSTREAM_URL=https://github.com/ggml-org/llama.cpp.git
 ARG LLAMA_UPSTREAM_SHA=a135ec0baa1bcf7eb0437c9fd04920f87cf33ace
-ARG LUCEBOX_URL=https://github.com/Luce-Org/lucebox-hub.git
-ARG LUCEBOX_SHA=6fe0d9a0a
 WORKDIR /build/llama.cpp
 RUN git init -q . && \
     git remote add origin "$LLAMA_UPSTREAM_URL" && \
@@ -33,23 +27,8 @@ RUN git init -q . && \
 
 COPY patches/llama-cpp/ /build/patches/llama-cpp/
 RUN git apply --whitespace=nowarn /build/patches/llama-cpp/0001-turboquant-base.patch
-RUN git clone "$LUCEBOX_URL" vendor/lucebox-hub && \
-    git -C vendor/lucebox-hub checkout -q "$LUCEBOX_SHA" && \
-    rm -rf vendor/lucebox-hub/.git
-RUN for p in /build/patches/llama-cpp/0002-*.patch \
-              /build/patches/llama-cpp/0003-*.patch \
-              /build/patches/llama-cpp/0004-*.patch \
-              /build/patches/llama-cpp/0005-*.patch \
-              /build/patches/llama-cpp/0006-*.patch \
-              /build/patches/llama-cpp/0008-*.patch \
-              /build/patches/llama-cpp/0009-*.patch \
-              /build/patches/llama-cpp/0010-*.patch; do \
-      echo "applying $(basename $p)"; \
-      git apply --whitespace=nowarn "$p"; \
-    done
 
-# Build for P40 — dflash decode engine in-tree (patches 0002-0010) + upstream
-# native MTP+speculative now baked in (PR #22673 + #23198 + #23237).
+# Build for P40 — TurboQuant KV cache + upstream native MTP (PR #22673).
 RUN cmake -B build \
     -DGGML_CUDA=ON \
     -DCMAKE_CUDA_ARCHITECTURES="61" \
@@ -57,7 +36,6 @@ RUN cmake -B build \
     -DLLAMA_SERVER=ON \
     -DLLAMA_FFMPEG=ON \
     -DLLAMA_BUILD_SERVER=ON \
-    -DLLAMA_DFLASH=ON \
     -DBUILD_SHARED_LIBS=OFF \
     -DCMAKE_CUDA_FLAGS="-Wno-deprecated-gpu-targets"
 

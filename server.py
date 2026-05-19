@@ -142,10 +142,6 @@ class Service:
 # ── Services ────────────────────────────────────────────────────
 
 _qwen_reasoning_args = ["--reasoning", "auto", "--reasoning-budget", "2048"]
-# Opt-in dflash decode engine (LLAMA_DFLASH=ON build).
-# Currently logs dispatch + falls through to standard llama_decode path —
-# real run_dflash_spec_decode wiring is still TBD.
-DECODE_ENGINE = os.environ.get("DECODE_ENGINE", "legacy")  # legacy|dflash (dflash dispatch still a no-op)
 
 if ENABLE_MTP:
     _qwen_model = MTP_MODEL_PATH
@@ -155,7 +151,6 @@ if ENABLE_MTP:
         "--spec-type", "draft-mtp",
         "--spec-draft-n-max", str(MTP_DRAFT_N_MAX),
         "--spec-draft-p-min", MTP_DRAFT_P_MIN,
-        "--decode-engine", DECODE_ENGINE,
     ]
 else:
     _qwen_model = "/models/Qwen3.6-27B-IQ4_XS.gguf"

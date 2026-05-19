@@ -16,7 +16,6 @@ services:
       - MTP_DRAFT_N_MAX=2
       - MTP_DRAFT_P_MIN=0.5
       - MTP_CACHE_TYPE=turbo3
-      - DECODE_ENGINE=legacy
     deploy:
       resources:
         reservations:

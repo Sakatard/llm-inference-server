@@ -4,12 +4,7 @@ models/
 
 .venv/
 
-artifacts/llama-server*
-artifacts/*.gguf
-
 __pycache__/
 *.pyc
 
-# Local-only patch backup (kept for rollback, not for remote)
-patches/llama-cpp.backup/
 REVIEWS/
