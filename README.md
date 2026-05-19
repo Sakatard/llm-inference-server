@@ -145,7 +145,7 @@ the new mainline.
 | `MTP_DRAFT_P_MIN` | `0.0` | Acceptance probability floor for drafts |
 | `MTP_CACHE_TYPE` | `turbo4` | KV cache quant (`turbo4` / `q8_0` / `f16`) |
 | `MTP_CTX` | `65536` (turbo4) / `32768` (other) | Context window — auto-shrinks for unquantised caches |
-| `DECODE_ENGINE` | `dflash` | `legacy` or `dflash`. **Currently a no-op:** the dflash library links but its dispatch falls through to `llama_decode`. Real spec-decode wiring (`project_hidden_to_tokens` ggml graph + server-side dispatch) is Phase 0h v2 work. |
+| `DECODE_ENGINE` | `dflash` | `legacy` or `dflash`. **Currently a no-op:** the dflash library links but its dispatch falls through to `llama_decode`. Real spec-decode wiring (`project_hidden_to_tokens` ggml graph + server-side dispatch) is still TBD. |
 
 To change anything, either set under `environment:` in
 `docker-compose.yaml` or pass at `docker compose run` time, then

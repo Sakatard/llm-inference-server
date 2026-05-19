@@ -142,9 +142,9 @@ class Service:
 # ── Services ────────────────────────────────────────────────────
 
 _qwen_reasoning_args = ["--reasoning", "auto", "--reasoning-budget", "2048"]
-# Phase 0h: opt-in dflash decode engine (LLAMA_DFLASH=ON build).
-# Currently logs Phase 0h dispatch + falls through to standard llama_decode path.
-# Real run_dflash_spec_decode wiring tracked in Phase 0h v3 task.
+# Opt-in dflash decode engine (LLAMA_DFLASH=ON build).
+# Currently logs dispatch + falls through to standard llama_decode path —
+# real run_dflash_spec_decode wiring is still TBD.
 DECODE_ENGINE = os.environ.get("DECODE_ENGINE", "dflash")  # legacy|dflash
 
 if ENABLE_MTP:
