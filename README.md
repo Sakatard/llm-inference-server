@@ -169,24 +169,30 @@ implementation in PR #22673 — our prior hand-rolled MTP hunks left
 the spec-decode path under-tuned, and the upstream version draws much
 higher acceptance on the same prompt distribution.
 
-Draft-N sweep on P40 (single-sample each; ±~1 tok/s noise):
+Draft-N × `MTP_DRAFT_P_MIN` sweep on P40 (3-sample average per cell, ~200-token
+essay prompt; absolute tok/s lower than the headline row above because of a
+larger prompt + different output distribution — apples-to-apples is within
+the grid):
 
-| `MTP_DRAFT_N_MAX` | tok/s | accept |
-|-------------------|-------|--------|
-| 1 | 20.24 | 88.6% |
-| **2** | **22.62** | **78.1%** ← sweet spot |
-| 3 | 18.25 | 66.0% |
-| 4 | 21.93 | 63.4% |
-| 5 | 20.94 | 58.6% |
-| 6 | 15.64 | 40.6% |
-| 8 | 17.45 | 35.4% |
+| N | `p_min=0.0` | `p_min=0.25` | `p_min=0.5` | `p_min=0.75` |
+|---|-------------|--------------|-------------|--------------|
+| **2** | 21.21 / 69.9% | 21.27 / 70.4% | **22.19 / 75.2%** ← winner | 22.04 / 74.6% |
+| 3 | 19.99 / 63.7% | 20.72 / 66.8% | 20.08 / 64.0% | 19.67 / 62.1% |
+| 4 | 20.06 / 55.8% | 20.79 / 58.7% | 21.06 / 59.6% | 20.82 / 58.8% |
 
-Pascal lacks tensor cores; verify-batch cost dominates draft savings
-once N ≥ 5. N=2 is robust on the prod build.
+Pascal lacks tensor cores; verify-batch cost dominates draft savings once
+N ≥ 3. N=2 dominates across every `p_min`. `p_min=0.5` is the cleanest
+choice at every N — early-rejecting weak drafts saves verify cost. The
+production build now ships `MTP_DRAFT_N_MAX=2`, `MTP_DRAFT_P_MIN=0.5`.
 
-Full dflash spec-decode dispatch + tree-mode CUDA kernels are not wired
-yet (the current build links the dflash library but logs + falls through
-to standard llama_decode). When wired, target is ≥28 tok/s.
+Full dflash spec-decode dispatch + tree-mode CUDA kernels remain unwired
+and are de-prioritised: the dflash bridge would need a real
+`output_norm + lm_head` ggml graph (path B) plus a quantized-row dequant
+on top of the current `llama_model_embed_input_tokens` API (which only
+handles F32/F16/BF16, not the Q4_K/IQ4_XS used by production GGUFs). A
+generic 0.6B drafter is also unlikely to beat MTP's in-model nextn
+acceptance on the Qwen3.6 distribution. Going forward, optimisation focus
+stays on MTP tuning + cache variants.
 
 ---
 

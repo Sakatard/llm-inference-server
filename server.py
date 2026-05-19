@@ -145,7 +145,7 @@ _qwen_reasoning_args = ["--reasoning", "auto", "--reasoning-budget", "2048"]
 # Opt-in dflash decode engine (LLAMA_DFLASH=ON build).
 # Currently logs dispatch + falls through to standard llama_decode path —
 # real run_dflash_spec_decode wiring is still TBD.
-DECODE_ENGINE = os.environ.get("DECODE_ENGINE", "dflash")  # legacy|dflash
+DECODE_ENGINE = os.environ.get("DECODE_ENGINE", "legacy")  # legacy|dflash (dflash dispatch still a no-op)
 
 if ENABLE_MTP:
     _qwen_model = MTP_MODEL_PATH
