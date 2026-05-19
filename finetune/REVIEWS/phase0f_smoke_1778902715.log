@@ -1,69 +1,0 @@
-
-=== Load unsloth/Qwen3.6-27B via Unsloth (mtp.* dropped at this stage — will reattach next) ===
-/opt/conda/lib/python3.11/site-packages/huggingface_hub/constants.py:277: FutureWarning: The `HF_HUB_ENABLE_HF_TRANSFER` environment variable is deprecated as 'hf_transfer' is not used anymore. Please use `HF_XET_HIGH_PERFORMANCE` instead to enable high performance transfer with Xet. Visit https://huggingface.co/docs/huggingface_hub/package_reference/environment_variables#hfxethighperformance for more details.
-  warnings.warn(
-🦥 Unsloth: Will patch your computer to enable 2x faster free finetuning.
-Unsloth: Your Flash Attention 2 installation seems to be broken. Using Xformers instead. No performance changes will be seen.
-🦥 Unsloth Zoo will now patch everything to make training faster!
-Unsloth: WARNING `trust_remote_code` is True.
-Are you certain you want to do remote code execution?
-==((====))==  Unsloth 2026.5.2: Fast Qwen3_5 patching. Transformers: 5.5.1.
-   \\   /|    NVIDIA GeForce RTX 4090. Num GPUs = 1. Max memory: 23.546 GB. Platform: Linux.
-O^O/ \_/ \    Torch: 2.6.0+cu124. CUDA: 8.9. CUDA Toolkit: 12.4. Triton: 3.2.0
-\        /    Bfloat16 = TRUE. FA [Xformers = 0.0.29.post3. FA2 = False]
- "-____-"     Free license: http://github.com/unslothai/unsloth
-Unsloth: Fast downloading is enabled - ignore downloading bars which are red colored!
-Fetching 15 files:   0%|          | 0/15 [00:00<?, ?it/s]Fetching 15 files:   7%|▋         | 1/15 [03:58<55:41, 238.67s/it]Fetching 15 files:  13%|█▎        | 2/15 [03:59<21:24, 98.84s/it] Fetching 15 files:  47%|████▋     | 7/15 [04:00<02:32, 19.10s/it]Fetching 15 files:  60%|██████    | 9/15 [06:46<03:56, 39.36s/it]Fetching 15 files:  67%|██████▋   | 10/15 [07:01<02:54, 34.90s/it]Fetching 15 files: 100%|██████████| 15/15 [07:01<00:00, 28.12s/it]
-The fast path is not available because one of the required library is not installed. Falling back to torch implementation. To install follow https://github.com/fla-org/flash-linear-attention#installation and https://github.com/Dao-AILab/causal-conv1d
-Loading weights:   0%|          | 0/1184 [00:00<?, ?it/s]Loading weights:   0%|          | 1/1184 [00:00<06:55,  2.85it/s]Loading weights:   0%|          | 2/1184 [00:00<07:30,  2.63it/s]Loading weights:   1%|          | 12/1184 [00:00<00:58, 19.91it/s]Loading weights:   1%|▏         | 17/1184 [00:00<00:46, 25.23it/s]Loading weights:   2%|▏         | 28/1184 [00:01<00:27, 41.31it/s]Loading weights:   3%|▎         | 41/1184 [00:01<00:19, 59.07it/s]Loading weights:   4%|▍         | 49/1184 [00:01<00:20, 56.09it/s]Loading weights:   6%|▌         | 66/1184 [00:01<00:13, 80.10it/s]Loading weights:   7%|▋         | 80/1184 [00:01<00:12, 89.04it/s]Loading weights:   8%|▊         | 93/1184 [00:01<00:11, 98.92it/s]Loading weights:   9%|▉         | 104/1184 [00:01<00:12, 84.45it/s]Loading weights:  10%|█         | 119/1184 [00:02<00:10, 97.02it/s]Loading weights:  11%|█         | 133/1184 [00:02<00:10, 101.61it/s]Loading weights:  12%|█▏        | 146/1184 [00:02<00:09, 106.45it/s]Loading weights:  13%|█▎        | 158/1184 [00:02<00:11, 86.93it/s] Loading weights:  15%|█▍        | 172/1184 [00:02<00:10, 96.99it/s]Loading weights:  16%|█▌        | 185/1184 [00:02<00:09, 102.73it/s]Loading weights:  17%|█▋        | 196/1184 [00:02<00:09, 102.73it/s]Loading weights:  17%|█▋        | 207/1184 [00:02<00:11, 83.33it/s] Loading weights:  19%|█▉        | 224/1184 [00:03<00:09, 102.38it/s]Loading weights:  20%|█▉        | 236/1184 [00:03<00:09, 99.78it/s] Loading weights:  21%|██        | 247/1184 [00:03<00:09, 101.59it/s]Loading weights:  22%|██▏       | 258/1184 [00:03<00:10, 89.15it/s] Loading weights:  23%|██▎       | 268/1184 [00:03<00:10, 91.16it/s]Loading weights:  24%|██▎       | 279/1184 [00:03<00:10, 89.09it/s]Loading weights:  25%|██▍       | 292/1184 [00:03<00:09, 95.96it/s]Loading weights:  26%|██▌       | 303/1184 [00:03<00:09, 97.27it/s]Loading weights:  26%|██▋       | 313/1184 [00:04<00:12, 72.23it/s]Loading weights:  28%|██▊       | 331/1184 [00:04<00:09, 92.90it/s]Loading weights:  29%|██▉       | 344/1184 [00:04<00:08, 99.86it/s]Loading weights:  30%|███       | 356/1184 [00:04<00:08, 102.58it/s]Loading weights:  31%|███       | 368/1184 [00:04<00:08, 91.09it/s] Loading weights:  32%|███▏      | 384/1184 [00:04<00:07, 104.81it/s]Loading weights:  34%|███▎      | 398/1184 [00:04<00:07, 107.22it/s]Loading weights:  35%|███▍      | 412/1184 [00:05<00:07, 109.05it/s]Loading weights:  36%|███▌      | 424/1184 [00:05<00:07, 98.65it/s] Loading weights:  37%|███▋      | 438/1184 [00:05<00:07, 101.54it/s]Loading weights:  38%|███▊      | 452/1184 [00:05<00:06, 104.87it/s]Loading weights:  39%|███▉      | 466/1184 [00:05<00:06, 107.69it/s]Loading weights:  40%|████      | 477/1184 [00:05<00:06, 101.08it/s]Loading weights:  41%|████▏     | 491/1184 [00:05<00:06, 108.00it/s]Loading weights:  43%|████▎     | 505/1184 [00:05<00:06, 109.14it/s]Loading weights:  44%|████▍     | 518/1184 [00:06<00:05, 113.17it/s]Loading weights:  45%|████▍     | 530/1184 [00:06<00:06, 95.35it/s] Loading weights:  46%|████▌     | 543/1184 [00:06<00:06, 101.33it/s]Loading weights:  47%|████▋     | 557/1184 [00:06<00:05, 104.56it/s]Loading weights:  48%|████▊     | 570/1184 [00:06<00:05, 110.77it/s]Loading weights:  49%|████▉     | 582/1184 [00:06<00:06, 93.00it/s] Loading weights:  50%|█████     | 597/1184 [00:06<00:05, 100.36it/s]Loading weights:  52%|█████▏    | 611/1184 [00:06<00:05, 104.46it/s]Loading weights:  53%|█████▎    | 625/1184 [00:07<00:05, 105.87it/s]Loading weights:  54%|█████▎    | 636/1184 [00:07<00:05, 99.20it/s] Loading weights:  55%|█████▍    | 650/1184 [00:07<00:05, 102.11it/s]Loading weights:  56%|█████▌    | 664/1184 [00:07<00:04, 105.79it/s]Loading weights:  57%|█████▋    | 678/1184 [00:07<00:04, 109.08it/s]Loading weights:  58%|█████▊    | 690/1184 [00:07<00:04, 99.38it/s] Loading weights:  59%|█████▉    | 703/1184 [00:07<00:04, 106.56it/s]Loading weights:  60%|██████    | 716/1184 [00:07<00:04, 108.27it/s]Loading weights:  62%|██████▏   | 730/1184 [00:08<00:04, 109.26it/s]Loading weights:  63%|██████▎   | 742/1184 [00:08<00:04, 97.92it/s] Loading weights:  64%|██████▍   | 756/1184 [00:08<00:04, 102.21it/s]Loading weights:  65%|██████▌   | 770/1184 [00:08<00:03, 106.26it/s]Loading weights:  66%|██████▌   | 784/1184 [00:08<00:03, 109.79it/s]Loading weights:  67%|██████▋   | 796/1184 [00:08<00:03, 99.68it/s] Loading weights:  68%|██████▊   | 809/1184 [00:08<00:03, 107.11it/s]Loading weights:  69%|██████▉   | 822/1184 [00:08<00:03, 110.66it/s]Loading weights:  71%|███████   | 836/1184 [00:09<00:03, 111.19it/s]Loading weights:  72%|███████▏  | 848/1184 [00:09<00:03, 95.38it/s] Loading weights:  82%|████████▏ | 965/1184 [00:09<00:00, 351.81it/s]Loading weights:  95%|█████████▍| 1119/1184 [00:09<00:00, 653.19it/s]Loading weights: 100%|██████████| 1184/1184 [00:09<00:00, 124.59it/s]
-    ... done in 460.9s
-
-=== Attach MTP head — read mtp.* tensors from HF cache + instantiate module ===
-[MTP] loaded 15 mtp.* tensors from /root/.cache/huggingface/hub/models--unsloth--Qwen3.6-27B/snapshots/c7d3d676ae77b6ae969f875aec68ed2daad7118c
-    ... done in 4.3s
-    mtp.* tensors loaded from safetensors: 15
-
-=== Resolve LoRA target_modules (trunk + mtp.layers.0.*) ===
-    trunk LoRA targets: 256, MTP LoRA targets: 7
-    modules_to_save (full retrain): ['mtp.fc', 'mtp.norm', 'mtp.pre_fc_norm_embedding', 'mtp.pre_fc_norm_hidden']
-    ... done in 0.0s
-
-=== Attach rank-8 LoRA on 263 linears + full retrain on 4 small modules ===
-
-[report] /workspace/phase0f_out/phase0f_report.json
-Traceback (most recent call last):
-  File "/workspace/phase0f_smoke.py", line 398, in <module>
-    main()
-  File "/workspace/phase0f_smoke.py", line 199, in main
-    model = FastModel.get_peft_model(
-            ^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/conda/lib/python3.11/site-packages/unsloth/models/vision.py", line 1482, in get_peft_model
-    model = _get_peft_model(model, lora_config)
-            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/conda/lib/python3.11/site-packages/peft/mapping_func.py", line 122, in get_peft_model
-    return MODEL_TYPE_TO_PEFT_MODEL_MAPPING[peft_config.task_type](
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/conda/lib/python3.11/site-packages/peft/peft_model.py", line 1955, in __init__
-    super().__init__(model, peft_config, adapter_name, **kwargs)
-  File "/opt/conda/lib/python3.11/site-packages/peft/peft_model.py", line 129, in __init__
-    self.base_model = cls(model, {adapter_name: peft_config}, adapter_name)
-                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/conda/lib/python3.11/site-packages/peft/tuners/tuners_utils.py", line 315, in __init__
-    self.inject_adapter(self.model, adapter_name, low_cpu_mem_usage=low_cpu_mem_usage, state_dict=state_dict)
-  File "/opt/conda/lib/python3.11/site-packages/peft/tuners/tuners_utils.py", line 913, in inject_adapter
-    self._create_and_replace(
-  File "/opt/conda/lib/python3.11/site-packages/unsloth/models/vision.py", line 1469, in _patched_car
-    return _original_car(
-           ^^^^^^^^^^^^^^
-  File "/opt/conda/lib/python3.11/site-packages/peft/tuners/lora/model.py", line 269, in _create_and_replace
-    new_module = self._create_new_module(lora_config, adapter_name, target, device_map=device_map, **kwargs)
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/conda/lib/python3.11/site-packages/peft/tuners/lora/model.py", line 418, in _create_new_module
-    new_module = dispatcher(target, adapter_name, config=lora_config, **kwargs)
-                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/conda/lib/python3.11/site-packages/peft/tuners/lora/torchao.py", line 142, in dispatch_torchao
-    if not is_torchao_available():
-           ^^^^^^^^^^^^^^^^^^^^^^
-  File "/opt/conda/lib/python3.11/site-packages/peft/import_utils.py", line 143, in is_torchao_available
-    raise ImportError(
-ImportError: Found an incompatible version of torchao. Found version 0.12.0, but only versions above 0.16.0 are supported
