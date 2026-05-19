@@ -189,9 +189,11 @@ production build now ships `MTP_DRAFT_N_MAX=2`, `MTP_DRAFT_P_MIN=0.5`.
 
 | cache | tok/s | accept | VRAM | notes |
 |-------|-------|--------|------|-------|
-| **`turbo4`** | **21.95** | **73.6%** | 19.0 GB | production |
+| **`turbo3`** | **22.43** | **77.1%** | **18.1 GB** | **production** — strict win on all three axes |
+| `turbo2` | 22.26 | 76.1% | 18.1 GB | close second; same VRAM as turbo3 |
+| `turbo4` | 21.95 | 73.6% | 19.0 GB | prior production |
+| `f16` | 21.23 | 69.3% | 20.6 GB | works but slower and +2.5 GB VRAM vs turbo3 |
 | `q8_0` | 8.95 | **0.0%** | 18.5 GB | breaks MTP — verifier rejects every draft, falls back to autoregressive |
-| `f16` | 21.23 | 69.3% | 20.6 GB | works but slower and +1.6 GB VRAM |
 
 `q8_0` + `--spec-type draft-mtp` produces 100% draft rejection on
 upstream `a135ec0baa1b` (Qwen3.6-27B-IQ4_XS, P40). The drafter still
@@ -200,6 +202,11 @@ sweep, suggesting the q8_0 KV quant rounding diverges between the
 nextn head's projection and the verifier's KV read. P40 is not an
 upstream-supported target so we accept this as a config constraint: do
 not pair `MTP_CACHE_TYPE=q8_0` with MTP.
+
+`turbo3` is the new production default: +2.2% tok/s and +3.5 pp accept
+vs `turbo4`, with 0.9 GB lower VRAM (likely from smaller per-head KV
+footprint at 65k ctx). `turbo2` is nearly identical to `turbo3` —
+within noise — but slightly lower accept, so `turbo3` wins on tiebreaker.
 
 Full dflash spec-decode dispatch + tree-mode CUDA kernels remain unwired
 and are de-prioritised: the dflash bridge would need a real

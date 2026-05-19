@@ -15,7 +15,7 @@ services:
       - MTP_MODEL_PATH=/models/Qwen3.6-27B-IQ4_XS.gguf
       - MTP_DRAFT_N_MAX=2
       - MTP_DRAFT_P_MIN=0.5
-      - MTP_CACHE_TYPE=turbo4
+      - MTP_CACHE_TYPE=turbo3
       - DECODE_ENGINE=legacy
     deploy:
       resources:
