@@ -12,3 +12,4 @@ __pycache__/
 
 # Local-only patch backup (kept for rollback, not for remote)
 patches/llama-cpp.backup/
+REVIEWS/
